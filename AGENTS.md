@@ -14,33 +14,174 @@ When this file is used as a template for a new project, the static sections carr
 
 ### Goal
 
-No project has been started. Ask the user what they want to build. Through discussion, fill in:
-- What the app does (core functionality)
-- Who it's for (target users)
-- Key constraints (platform, performance, accessibility, etc.)
+**Aissistant Writer** — a web-based AI writing assistant that combines Scrivener-level project organization with flexible multi-model AI integration. The app helps authors organize their thoughts, develop stories, and write — with AI as a critical partner that understands the full context of the project.
+
+**Core functionality:**
+- **Chat-first authoring** — users spill unstructured ideas in chat; the AI organizes them into structured content files (characters, chapters, outlines, world-building, etc.)
+- **Flexible project organization** — VS Code-inspired layout with resizable panels. Tree-based project explorer where users create any file types they need. The UI renders whatever files exist.
+- **Multi-model AI via OpenRouter** — BYOK (bring your own key) with real-time token usage and cost display. Future: proxied AI with pay-per-prompt billing.
+- **Hierarchical context system** — L0 (full content), L1 (file summaries), L2 (project state) to efficiently manage context windows across any model size
+- **AI consistency checking** — the AI fact-checks against established character traits, settings, timelines, and flags contradictions
+- **Change logging** — every AI-driven or manual edit is timestamped and logged with daily session summaries
+- **Session tracking** — auto-detect inactivity, log what was worked on, update goals/progress automatically
+- **File upload & processing** — users upload reference materials for AI review and integration
+- **Story graph change management** (future) — entity-relationship graph enabling retroactive change propagation when characters, plot points, or style change
+
+**Target users:** Solo fiction authors, creative writers of all types, and writing teams/collaborators (collaboration features in later phases).
+
+**Key constraints:**
+- Web-first, architected for potential Tauri desktop wrapper later
+- Cloud database (Supabase)
+- Context window efficiency is critical — the system must work well even with large projects and small context windows
+- Must support any LLM available through OpenRouter
+
+**Monetization strategy:**
+- Free tier: full organization tools, BYOK AI only, limited active projects
+- Pay-per-prompt: proxied AI with transparent per-action pricing and pre-loaded wallet (Phase 2)
+- Premium features: collaboration, advanced change management, publishing export (later phases)
 
 ### Status
 
-Not started.
+Phase 1 MVP — code complete. All 10 implementation steps finished. Build passes cleanly. Needs Supabase project setup + migration to be deployed and tested end-to-end.
+
+**What's done:**
+- Project scaffolding (Next.js 15 + TypeScript + Tailwind v4 + shadcn/ui)
+- Database schema (9 tables with RLS policies) + auth flow (email/password)
+- VS Code-like 3-panel layout with allotment (resizable, chat toggleable)
+- Project explorer (tree view, CRUD, rename, type icons)
+- Tiptap editor with tabs, autosave (2s debounce + SHA-256 hash)
+- Change logging (entity CRUD tracked with actor/timestamp)
+- OpenRouter integration (API key encryption, model listing, streaming chat)
+- AI chat panel (SSE streaming, tool calls, token/cost tracking, model selector)
+- Hierarchical context system (L0/L1/L2 context builder, relevance scoring, summary generation)
+- Session tracking (heartbeat, inactivity detection, session history)
+- File upload (drag-and-drop, Supabase Storage, 10MB limit)
+
+**What's needed to deploy:**
+1. Create Supabase project, add URL + anon key to `.env.local`
+2. Run migration: `supabase/migrations/001_initial_schema.sql`
+3. Set a secure `ENCRYPTION_KEY` in `.env.local`
+4. Create `uploads` storage bucket in Supabase dashboard
+
+**Phases overview:**
+- **Phase 1 (MVP):** Chat-first authoring, project organization, BYOK AI via OpenRouter, hierarchical context system, token/cost tracking, file upload, change logging, session tracking
+- **Phase 2:** Proxied AI billing (wallet/recharge), inactivity auto-detection + auto-updates, enhanced session logs
+- **Phase 3:** Story graph change management, retroactive change propagation
+- **Phase 4:** Collaborative editing, developmental AI feedback, voice preservation, publishing export
 
 ### Key Decisions
 
-Record every significant technical decision here. Format:
+**[2026-02-04] Frontend framework**
+Options considered: Next.js (React), SvelteKit, Nuxt (Vue)
+Chose: Next.js (React)
+Reasoning: Full-stack with SSR and API routes built-in, largest ecosystem for complex UI components (rich text editors, panel layouts), pairs well with Vercel for deployment, and React components can be wrapped in Tauri for future desktop app.
 
-```
-**[Date] Decision title**
-Options considered: A, B, C
-Chose: B
-Reasoning: [Why B was selected over alternatives]
-```
+**[2026-02-04] Database**
+Options considered: Supabase (PostgreSQL), PostgreSQL + custom backend, MongoDB Atlas
+Chose: Supabase
+Reasoning: Provides PostgreSQL + auth + realtime subscriptions + file storage out of the box. Significantly faster to build with than rolling custom infrastructure. Open source and can be self-hosted later if needed. Row-level security for multi-tenant data isolation.
+
+**[2026-02-04] Rich text editor**
+Options considered: Tiptap (ProseMirror), Lexical (Meta), Novel.dev
+Chose: Tiptap
+Reasoning: Built on battle-tested ProseMirror. Headless and highly customizable. Supports collaborative editing for future phases. Large ecosystem of extensions. Free tier sufficient for MVP; paid cloud collab available for Phase 4.
+
+**[2026-02-04] AI model routing**
+Options considered: OpenRouter, direct provider APIs, LiteLLM
+Chose: OpenRouter
+Reasoning: Single API integration provides access to 300+ models. Handles BYOK natively. Reports token usage per request (essential for cost tracking). Less code to maintain than direct integrations. Well-established service.
+
+**[2026-02-04] UI layout approach**
+Options considered: Notion-like (sidebar + pages), Scrivener-like (binder + editor + inspector), VS Code-like (explorer + tabs + panels)
+Chose: VS Code-like with writing-optimized editor
+Reasoning: Maximum flexibility — resizable panels in fixed positions (left sidebar, center editor, right/bottom panels) that can be toggled on/off. Using allotment library for split panes. Main editor area optimized for prose writing (not code). Full drag-and-dock deferred to later phases.
+
+**[2026-02-04] Context window strategy**
+Options considered: Send everything (wasteful), RAG only (loses holistic understanding), hierarchical summarization
+Chose: Hierarchical summarization (L0/L1/L2) with targeted retrieval
+Reasoning: L2 project state (~2-4K tokens, always included) gives the AI baseline understanding. L1 file summaries (~200-500 tokens each, loaded by relevance) provide detail on specific entities. L0 full content loaded only for the file being actively discussed. Change detection via file hashing ensures AI stays current even when user edits without telling it. This approach works efficiently across all context window sizes.
+
+**[2026-02-04] Styling**
+Options considered: Tailwind + shadcn/ui, Material UI, Chakra UI
+Chose: Tailwind CSS + shadcn/ui
+Reasoning: shadcn/ui provides accessible, well-designed components that are copied into the project (not a dependency). Tailwind enables rapid styling without CSS file proliferation. Both are standard in the Next.js ecosystem.
 
 ### Architecture
 
-Document the system architecture as it emerges. Include:
-- High-level component diagram (text-based)
-- Data flow
-- Key interfaces between components
-- File/folder structure map
+**High-level component diagram:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Next.js Frontend                      │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ Project   │  │ Tiptap       │  │ AI Chat Panel     │  │
+│  │ Explorer  │  │ Editor       │  │ (toggleable/      │  │
+│  │ (tree)    │  │ (writing-    │  │  popout)           │  │
+│  │           │  │  optimized)  │  │                    │  │
+│  └──────────┘  └──────────────┘  └───────────────────┘  │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │ Token/Cost Tracker Bar                              │ │
+│  └─────────────────────────────────────────────────────┘ │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                  Next.js API Routes                       │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ Project   │  │ AI Service   │  │ Session/Log       │  │
+│  │ CRUD      │  │ (OpenRouter  │  │ Service           │  │
+│  │           │  │  proxy +     │  │                    │  │
+│  │           │  │  context     │  │                    │  │
+│  │           │  │  builder)    │  │                    │  │
+│  └──────────┘  └──────────────┘  └───────────────────┘  │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                     Supabase                              │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ Auth     │  │ PostgreSQL    │  │ Storage           │  │
+│  │          │  │ - projects    │  │ (uploaded files)   │  │
+│  │          │  │ - entities    │  │                    │  │
+│  │          │  │ - sessions    │  │                    │  │
+│  │          │  │ - change_logs │  │                    │  │
+│  │          │  │ - summaries   │  │                    │  │
+│  └──────────┘  └──────────────┘  └───────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Data flow — Chat-first authoring:**
+
+```
+User types messy idea in chat
+  → API route receives message
+  → Context builder assembles: L2 state + relevant L1 summaries + conversation history
+  → OpenRouter sends to selected LLM
+  → LLM responds with structured output (text response + file operations)
+  → API route applies file operations (create/update entities)
+  → Change log entry created with timestamp and description
+  → Frontend updates: chat shows response, project explorer reflects new/changed files
+  → L1 summary regenerated for affected files
+  → L2 project state updated if needed
+```
+
+**Key database tables:**
+
+- `projects` — user projects with settings and metadata
+- `entities` — all content items (characters, chapters, outlines, notes, etc.) with type, name, content (rich text), properties (JSONB), parent_id (tree structure), version_hash
+- `entity_summaries` — AI-generated L1 summaries per entity, regenerated on content change
+- `project_states` — L2 compressed project overview, regenerated periodically
+- `conversations` — chat history with token counts and costs per message
+- `change_logs` — timestamped record of every change (who, what, when, description)
+- `sessions` — activity tracking (start, end, duration, files touched, summary)
+- `uploaded_files` — metadata for user-uploaded reference materials (file stored in Supabase Storage)
+
+**Key interfaces:**
+
+- Frontend ↔ API: REST endpoints for CRUD, SSE/streaming for AI responses
+- API ↔ OpenRouter: OpenAI-compatible chat completions API with streaming
+- API ↔ Supabase: Supabase client SDK (auth, database, storage, realtime)
+- Context builder: internal service that assembles the optimal prompt from L0/L1/L2 layers based on conversation context
 
 ---
 
@@ -51,9 +192,12 @@ All project context lives in this file until the project grows enough to warrant
 | Information | Location |
 |---|---|
 | Project goal and scope | Project section above |
-| Current progress | Status section above |
+| Current progress and phases | Status section above |
 | Technical decisions | Key Decisions section above |
-| System architecture | Architecture section above |
+| System architecture and data flow | Architecture section above |
+| Monetization strategy | Goal section above |
+| Context window strategy | Key Decisions section above |
+| Competitive research | Discussed in initial planning session (not persisted — key insight: no tool combines strong organization + flexible AI + retroactive change management) |
 | Assistant behavior guidelines | Assistant Guidelines section below |
 | Development principles | Development Principles section below |
 | How to start or continue work | Workflow section below |
