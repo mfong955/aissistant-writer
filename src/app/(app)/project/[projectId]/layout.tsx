@@ -3,7 +3,7 @@ import { ProjectProvider } from "@/contexts/project-context";
 import { ProjectShell } from "./project-shell";
 import { dbGetProject } from "@/lib/db/projects";
 import { getLocalUserId } from "@/lib/local-user";
-import { ensureInstructionsEntity, ensureLogsFolder } from "@/lib/db/entities";
+import { ensureInstructionsEntity, ensureLogsFolder, ensureProgressEntity } from "@/lib/db/entities";
 
 export default async function ProjectLayout({
   params,
@@ -21,6 +21,7 @@ export default async function ProjectLayout({
 
   // Ensure every project has its AI Instructions file and Logs folder
   ensureInstructionsEntity(projectId, userId, project.system_instructions);
+  ensureProgressEntity(projectId, userId);
   ensureLogsFolder(projectId, userId);
 
   return (

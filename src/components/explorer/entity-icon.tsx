@@ -10,6 +10,7 @@ import {
   Sparkles,
   History,
   ScrollText,
+  ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EntityType } from "@/types/database";
@@ -46,6 +47,9 @@ export function EntityIcon({
   className?: string;
 }) {
   // Reserved special entities get distinct icons and colors
+  if (name === "Project Progress") {
+    return <ListChecks className={cn("text-teal-500", className)} />;
+  }
   if (name === "AI Instructions") {
     return <Sparkles className={cn("text-purple-500", className)} />;
   }

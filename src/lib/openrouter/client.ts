@@ -4,6 +4,7 @@ import type {
   ChatCompletionRequest,
   ToolDefinition,
   StreamChunk,
+  ToolCallResponse,
 } from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -63,6 +64,52 @@ export async function chatCompletion(params: {
   }
 
   return response.body;
+}
+
+export async function chatCompletionJson(params: {
+  apiKey: string;
+  messages: ChatCompletionMessage[];
+  model: string;
+  tools?: ToolDefinition[];
+  maxTokens?: number;
+}): Promise<{ content: string | null; toolCalls?: ToolCallResponse[]; usage?: { prompt_tokens: number; completion_tokens: number } }> {
+  const body: ChatCompletionRequest = {
+    model: params.model,
+    messages: params.messages,
+    stream: false,
+    max_tokens: params.maxTokens ?? 1024,
+  };
+
+  if (params.tools && params.tools.length > 0) {
+    body.tools = params.tools;
+  }
+
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://aissistant-writer.app",
+      "X-Title": "Aissistant Writer",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json() as {
+    choices: Array<{ message: { content: string | null; tool_calls?: ToolCallResponse[] } }>;
+    usage?: { prompt_tokens: number; completion_tokens: number };
+  };
+  const message = data.choices?.[0]?.message;
+  return {
+    content: message?.content ?? null,
+    toolCalls: message?.tool_calls,
+    usage: data.usage,
+  };
 }
 
 export function parseSSEStream(

@@ -36,6 +36,13 @@ export async function buildContext(params: {
     ? extractTextFromTiptap(JSON.parse(instructionsRow.content))
     : (project?.system_instructions ?? null);
 
+  const progressRow = db
+    .prepare("SELECT id, content FROM entities WHERE project_id = ? AND name = 'Project Progress' AND parent_id IS NULL")
+    .get(projectId) as { id: string; content: string | null } | undefined;
+  const progressContent = progressRow?.content
+    ? extractTextFromTiptap(JSON.parse(progressRow.content))
+    : null;
+
   const entityRows = db
     .prepare("SELECT * FROM entities WHERE project_id = ?")
     .all(projectId) as Record<string, unknown>[];
@@ -146,6 +153,7 @@ export async function buildContext(params: {
     projectName,
     projectType: project?.project_type as import("@/types/database").ProjectType | null ?? null,
     systemInstructions: resolvedInstructions,
+    projectProgress: progressContent,
     projectState: projectStateContent,
     entitySummaries: includedSummaries,
     activeEntityContent,

@@ -41,7 +41,9 @@ export async function POST(request: Request) {
   const contextResult = await buildContext({
     projectId: project_id,
     userId,
-    userMessage: lastUserMessage?.content || "",
+    userMessage: (Array.isArray(lastUserMessage?.content)
+      ? lastUserMessage.content.find((p) => p.type === "text")?.text
+      : lastUserMessage?.content) || "",
     activeEntityIds: active_entity_ids || [],
     contextLimit: context_limit || 128000,
   });

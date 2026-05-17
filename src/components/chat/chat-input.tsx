@@ -1,18 +1,20 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Send, Square, Paperclip, Link, X } from "lucide-react";
+import { Send, Square, Paperclip, Link, X, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { ImageAttachment } from "@/hooks/use-chat";
 
-interface Attachment {
-  id: string;
-  type: "file" | "link";
-  name: string;
-  content: string;
-}
+type Attachment =
+  | { id: string; type: "file"; name: string; content: string }
+  | { id: string; type: "image"; name: string; base64url: string; mimeType: string }
+  | { id: string; type: "link"; name: string; content: string };
+
+const TEXT_EXTENSIONS = /\.(md|markdown|txt|csv|json|jsonl|yaml|yml|toml|py|js|ts|tsx|jsx|html|css|scss|xml|svg|sh|bash|zsh|env|ini|cfg|conf|log|rst|tex)$/i;
+const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|avif)$/i;
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, images?: ImageAttachment[]) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled?: boolean;
@@ -31,23 +33,19 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function buildMessageWithAttachments(text: string): string {
+  function buildTextMessage(text: string): string {
     if (!attachments.length) return text;
     const parts = [text.trim()];
-    const fileAttachments = attachments.filter((a) => a.type === "file");
-    const linkAttachments = attachments.filter((a) => a.type === "link");
+    const fileAttachments = attachments.filter((a): a is Extract<Attachment, { type: "file" }> => a.type === "file");
+    const linkAttachments = attachments.filter((a): a is Extract<Attachment, { type: "link" }> => a.type === "link");
     if (fileAttachments.length) {
       parts.push(
         `\n\n[Attached files]\n` +
-          fileAttachments
-            .map((a) => `--- ${a.name} ---\n${a.content}`)
-            .join("\n\n")
+          fileAttachments.map((a) => `--- ${a.name} ---\n${a.content}`).join("\n\n")
       );
     }
     if (linkAttachments.length) {
-      parts.push(
-        `\n\n[Attached links]\n` + linkAttachments.map((a) => `- ${a.content}`).join("\n")
-      );
+      parts.push(`\n\n[Attached links]\n` + linkAttachments.map((a) => `- ${a.content}`).join("\n"));
     }
     return parts.join("");
   }
@@ -55,7 +53,10 @@ export function ChatInput({
   function handleSubmit() {
     const text = input.trim();
     if (!text || disabled) return;
-    onSend(buildMessageWithAttachments(text));
+    const images = attachments
+      .filter((a): a is Extract<Attachment, { type: "image" }> => a.type === "image")
+      .map((a) => ({ name: a.name, base64url: a.base64url, mimeType: a.mimeType }));
+    onSend(buildTextMessage(text), images.length ? images : undefined);
     setInput("");
     setAttachments([]);
     setShowLinkInput(false);
@@ -76,25 +77,63 @@ export function ChatInput({
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const content = event.target?.result as string;
+      const isText = file.type.startsWith("text/") || TEXT_EXTENSIONS.test(file.name);
+      const isImage = file.type.startsWith("image/") || IMAGE_EXTENSIONS.test(file.name);
+
+      if (isImage) {
+        // Read image as base64 for vision API
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const base64url = ev.target?.result as string;
+          setAttachments((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), type: "image", name: file.name, base64url, mimeType: file.type || "image/png" },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else if (isText) {
+        // Read as UTF-8 text
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const content = ev.target?.result as string;
+          setAttachments((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), type: "file", name: file.name, content },
+          ]);
+        };
+        reader.readAsText(file, "utf-8");
+      } else if (file.name.endsWith(".pdf") || file.type === "application/pdf") {
         setAttachments((prev) => [
           ...prev,
-          { id: crypto.randomUUID(), type: "file", name: file.name, content },
+          {
+            id: crypto.randomUUID(),
+            type: "file",
+            name: file.name,
+            content: `[PDF — copy and paste the relevant text from "${file.name}" into the message instead]`,
+          },
         ]);
-      };
-      // Read text files as text; treat others as a reference
-      if (file.type.startsWith("text/") || /\.(md|txt|csv|json|py|js|ts|tsx|jsx|html|css)$/i.test(file.name)) {
-        reader.readAsText(file);
+      } else if (/\.(doc|docx|rtf|odt)$/i.test(file.name)) {
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: "file",
+            name: file.name,
+            content: `[Word document — copy and paste the relevant text from "${file.name}" into the message instead]`,
+          },
+        ]);
       } else {
         setAttachments((prev) => [
           ...prev,
-          { id: crypto.randomUUID(), type: "file", name: file.name, content: `[Binary file — ${file.type || "unknown type"}, ${(file.size / 1024).toFixed(1)} KB]` },
+          {
+            id: crypto.randomUUID(),
+            type: "file",
+            name: file.name,
+            content: `[Unsupported format: ${file.type || file.name.split(".").pop()} — ${(file.size / 1024).toFixed(1)} KB]`,
+          },
         ]);
       }
     });
-    // Reset file input so the same file can be re-attached
     e.target.value = "";
   }, []);
 
@@ -119,7 +158,9 @@ export function ChatInput({
               key={att.id}
               className="inline-flex items-center gap-1 rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground max-w-[200px]"
             >
-              {att.type === "file" ? (
+              {att.type === "image" ? (
+                <ImageIcon className="h-3 w-3 shrink-0 text-blue-400" />
+              ) : att.type === "file" ? (
                 <Paperclip className="h-3 w-3 shrink-0" />
               ) : (
                 <Link className="h-3 w-3 shrink-0" />
@@ -217,7 +258,7 @@ export function ChatInput({
         type="file"
         className="hidden"
         multiple
-        accept=".txt,.md,.csv,.json,.py,.js,.ts,.tsx,.jsx,.html,.css,.pdf,.doc,.docx"
+        accept=".txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.sh,.log,.rst,.tex,.png,.jpg,.jpeg,.gif,.webp,.avif,.pdf,.doc,.docx,.rtf"
         onChange={handleFileChange}
       />
     </div>

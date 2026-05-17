@@ -2,10 +2,17 @@
 
 import { useState, useCallback, useRef } from "react";
 
+export interface ImageAttachment {
+  name: string;
+  base64url: string;
+  mimeType: string;
+}
+
 export interface ChatMessageUI {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
+  imageAttachments?: ImageAttachment[];
   toolCalls?: ToolCallUI[];
   promptTokens?: number;
   completionTokens?: number;
@@ -53,13 +60,14 @@ export function useChat({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (userMessage: string) => {
+    async (userMessage: string, imageAttachments?: ImageAttachment[]) => {
       if (!modelId || !userMessage.trim() || isStreaming) return;
 
       const userMsg: ChatMessageUI = {
         id: crypto.randomUUID(),
         role: "user",
         content: userMessage.trim(),
+        imageAttachments,
         timestamp: new Date(),
       };
 
@@ -81,10 +89,18 @@ export function useChat({
       abortControllerRef.current = abortController;
 
       try {
-        // Build messages for the API (convert to OpenAI format)
+        // Build messages for the API — use content array for vision when images present
         const apiMessages = [...messages, userMsg].map((m) => ({
           role: m.role,
-          content: m.content,
+          content: m.imageAttachments?.length
+            ? [
+                { type: "text" as const, text: m.content },
+                ...m.imageAttachments.map((img) => ({
+                  type: "image_url" as const,
+                  image_url: { url: img.base64url },
+                })),
+              ]
+            : m.content,
         }));
 
         const response = await fetch("/api/openrouter/chat", {
@@ -262,12 +278,20 @@ export function useChat({
     setContextInfo(null);
   }, []);
 
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), role: "system", content, timestamp: new Date() },
+    ]);
+  }, []);
+
   return {
     messages,
     isStreaming,
     sendMessage,
     stopStreaming,
     clearMessages,
+    addSystemMessage,
     totalPromptTokens,
     totalCompletionTokens,
     totalCost,

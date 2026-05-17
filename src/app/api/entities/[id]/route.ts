@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { dbGetEntity, dbUpdateEntity, dbDeleteEntity } from "@/lib/db/entities";
+import { dbGetEntity, dbUpdateEntity, dbDeleteEntity, appendToSessionLog } from "@/lib/db/entities";
+import { getDb } from "@/lib/db/database";
+import { getLocalUserId } from "@/lib/local-user";
 
 export async function GET(
   request: Request,
@@ -25,9 +27,28 @@ export async function PATCH(
   if (!project_id) {
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
+
+  const before = dbGetEntity(id, project_id);
   const entity = dbUpdateEntity(id, project_id, updates);
   if (!entity) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ entity });
+
+  // Log user-initiated renames so the AI is always aware of old → new name mappings
+  if (before && updates.name && updates.name !== before.name) {
+    const userId = getLocalUserId();
+    const ts = new Date().toISOString();
+    const description = `Renamed ${before.type}: "${before.name}" → "${updates.name}"`;
+    getDb()
+      .prepare(
+        `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
+         VALUES (?, ?, ?, ?, 'rename', 'user', ?, ?)`
+      )
+      .run(crypto.randomUUID(), project_id, userId, id, description, ts);
+    appendToSessionLog(project_id, userId, description);
+  }
+
+  const renamedFrom =
+    before && updates.name && updates.name !== before.name ? before.name : undefined;
+  return NextResponse.json({ entity, renamedFrom });
 }
 
 export async function DELETE(

@@ -31,8 +31,17 @@ The explorer expanding icon moves every time the user clicks it. Can you move it
 ===\
 - For the AI instructions, what are the strength and weaknesses of this? Is there another location where the file locations / logic is placed? How does the AI in the app know this logic, and know where to update the logs, and what the progress is? The progress is very important and should be updated after every session, so the user can just open up the app and switch AIs at any time and the AI will know where the project progress has left off\
 ===\
+- We need to keep context window and context management at top of mind always, so that the user can join in on the project at any time while switching to any AI and the AI can catch up and know where the project left off. This means that any progress, logs, open questions, flags, etc. formatting and locations should be standardized and all found from one place that the AI is always aware of like in AGENTS.md. You may have already implemented this. If so, where can I find this file?\
+===\
+- When I update the file name, it seems to be syncing 1 iteration in the past. e.g., I changed names from Sera -> Sarah -> Max -> Max2, and the names were changed so that at the end the final text changed to \'93Max\'94 in the files.\
+- When I upload a file to the chat area, the latest version of Claude couldn\'92t recognize the content. Can you ensure that most, if not all, files content can be properly extracted for the AI to read through in a programmatic way?\
+===\
+- When I make the changes, the name is still 1 behind. For example, Changing the file name from Sera > Sarah > Max, the files show the name Sarah \
+- Also for some reason, the name in the file itself doesn't change. In this example, the file isnamed Max at this point, but the top line in the content of the file remains "# Sera\'94 \
+- Also when the file is already opened as a tab in the main section (where the user views the content in the file. What is this section called for future reference?) and then I change the name of the file in the explorer, the tab name doesn't change. Can you make it so when a file name changes, that the currently opened tabs are closed and reopened so that the user only sees the most up-to-date file? For example, if I change the character file name to Max, any files that include the previous names should be updated to have that string changed to Max as well. The relevant files, if opened, should be closed and reopened again so that the currently opened files / tabs are the latest versions.\
 \
-\
+- When I sent a prompt to the AI chat, the AI was in progress. However, when I toggled through the chat to minimize the chat area, the chat history went away. Can you ensure that it persists through all chat panel toggling and that the chat history persists as well? \
+- The files \
 \
 \
 \
@@ -42,6 +51,7 @@ The explorer expanding icon moves every time the user clicks it. Can you move it
 - maybe we can set it up so we have an account on openrouter.ai that uses auto-top-up for users. Then we will also restrict the model options for them (the top options for writing text / story telling / and anything used for writing in general) and give a recommended option for them. That way we will always ensure that there are credits but also have a way to charge a small amount per prompt. Is that doable? What are the strengths and weaknesses in this? Do you have other recommendations? This means we will need users to sign in. How can we get this set up? \
 - Whatever method we go with: When I refresh the page, the previously used AI in the AI chat area should persist. It currently doesn\'92t and resets to whatever default every time.\
 Can you help me add this to our plan? \
+What do you recommend we work on next?\
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 \cf0 \
 \

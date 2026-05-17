@@ -11,9 +11,13 @@ export interface OpenRouterModel {
   };
 }
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatCompletionMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | null | ContentPart[];
   tool_calls?: ToolCallResponse[];
   tool_call_id?: string;
 }

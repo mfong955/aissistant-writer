@@ -1,6 +1,6 @@
 "use client";
 
-import { User, Bot, Check, X, FileText } from "lucide-react";
+import { User, Bot, Check, X, FileText, RefreshCw } from "lucide-react";
 import type { ChatMessageUI } from "@/hooks/use-chat";
 
 interface ChatMessageProps {
@@ -8,6 +8,15 @@ interface ChatMessageProps {
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
+  if (message.role === "system") {
+    return (
+      <div className="flex items-start gap-2 border-b border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
+        <RefreshCw className="mt-0.5 h-3 w-3 shrink-0" />
+        <span className="leading-relaxed">{message.content}</span>
+      </div>
+    );
+  }
+
   const isUser = message.role === "user";
 
   return (
@@ -24,6 +33,19 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
       </div>
       <div className="min-w-0 flex-1 space-y-2">
+        {message.imageAttachments && message.imageAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {message.imageAttachments.map((img) => (
+              <img
+                key={img.base64url.slice(-20)}
+                src={img.base64url}
+                alt={img.name}
+                className="max-h-48 max-w-[200px] rounded border object-contain"
+                title={img.name}
+              />
+            ))}
+          </div>
+        )}
         <div className="whitespace-pre-wrap text-sm leading-relaxed">
           {message.content || (message.toolCalls?.length ? "" : "...")}
         </div>

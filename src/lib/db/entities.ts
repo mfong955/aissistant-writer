@@ -1,6 +1,6 @@
 import { getDb } from "./database";
 import type { Entity, EntityType, ProjectType } from "@/types/database";
-import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
+import { textToTiptapJson, extractTextFromTiptap, replaceTextInTiptapDoc } from "@/lib/tiptap-utils";
 
 const DEFAULT_FOLDERS: Record<NonNullable<ProjectType>, string[]> = {
   novel: ["Characters", "Settings", "Chapters", "Outlines", "Notes"],
@@ -138,16 +138,72 @@ export function dbDeleteEntity(id: string, projectId: string): void {
   getDb().prepare("DELETE FROM entities WHERE id = ? AND project_id = ?").run(id, projectId);
 }
 
-const INSTRUCTIONS_DEFAULT = `This is your project's AI Instructions file.
-The AI reads this before every response — treat it like a project-specific AGENTS.md.
+const PROGRESS_DEFAULT = `## Status
+[Overall project status — e.g. "Novel · First Draft: Chapter 1 of 12 in progress"]
 
-Add any rules that should guide the AI for this project:
+## Last Session
+[AI will update this after each session]
 
-Tone & genre: describe the mood, genre, and any stylistic conventions.
-Character voice: how should specific characters speak and behave?
-Naming conventions: any rules for place names, magic systems, terminology?
-Things to avoid: tropes, phrases, or approaches that don't fit this project.
-Story rules: world-building constraints the AI must respect.`;
+## Currently Working On
+[Active focus right now]
+
+## Next Steps
+1. [First priority]
+2. [Second priority]
+3. [Third priority]
+
+## Key Decisions
+[Important canon/story decisions the AI must respect — keep this list short and pruned]`;
+
+export function ensureProgressEntity(projectId: string, userId: string): Entity {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT * FROM entities WHERE project_id = ? AND name = 'Project Progress' AND parent_id IS NULL")
+    .get(projectId) as Record<string, unknown> | undefined;
+  if (existing) return rowToEntity(existing);
+
+  const id = crypto.randomUUID();
+  const ts = now();
+  db.prepare(
+    `INSERT INTO entities (id, project_id, user_id, parent_id, type, name, content, properties, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, 'note', 'Project Progress', ?, '{"_reserved":"progress"}', -2, ?, ?)`
+  ).run(id, projectId, userId, JSON.stringify(textToTiptapJson(PROGRESS_DEFAULT)), ts, ts);
+  return dbGetEntity(id, projectId)!;
+}
+
+const INSTRUCTIONS_DEFAULT = `# AI Instructions
+This file is read by every AI before every response — it is the project-level AGENTS.md.
+Edit it freely. The AI will follow whatever you write here.
+
+---
+
+## Switching or Starting Fresh with a New AI
+1. Open this project in the app.
+2. The AI automatically reads this file and "Project Progress" (pinned in the explorer) before responding.
+3. That's all — no copy-pasting. The AI will know the project structure, where it left off, and what comes next.
+
+---
+
+## Project Map
+Where to find everything:
+
+- Project Progress (pinned in explorer) — live snapshot updated by the AI after every working session. Contains: current status, last session summary, next steps, and key decisions. Start here when resuming.
+- Logs/ folder — full timestamped history of all AI changes, one file per day (YYYY-MM-DD). Read these if you need to trace what happened in a specific session.
+- AI Instructions (this file) — behavioral rules and project navigation. The AI reads this first.
+- Project folders (Characters/, Chapters/, etc.) — content lives here, organized by project type.
+
+Open questions and flags: add them to the "Next Steps" or "Key Decisions" section of Project Progress so they are always visible to the AI.
+
+---
+
+## Behavioral Guidelines
+Fill in the sections below to shape how the AI writes and reasons for this project.
+
+Tone & genre: [describe the mood, genre, and stylistic conventions]
+Character voice: [how should specific characters speak and behave?]
+Naming conventions: [any rules for place names, magic systems, terminology]
+Things to avoid: [tropes, phrases, or approaches that don't fit this project]
+Story rules: [world-building constraints and canon the AI must never break]`;
 
 export function ensureInstructionsEntity(projectId: string, userId: string, initialContent?: string | null): Entity {
   const db = getDb();
@@ -213,4 +269,61 @@ export function appendToSessionLog(projectId: string, userId: string, entry: str
        VALUES (?, ?, ?, ?, 'note', ?, ?, '{"_reserved":"session_log"}', 0, ?, ?)`
     ).run(id, projectId, userId, folderId, today, JSON.stringify(textToTiptapJson(logLine)), ts, ts);
   }
+}
+
+/**
+ * Programmatically replace all exact-text occurrences of oldName with newName
+ * across every entity in the project (excluding the renamed entity itself and
+ * historical session logs, which are immutable records).
+ * Returns the names of entities that were actually changed.
+ */
+export function syncEntityReferences(
+  projectId: string,
+  userId: string,
+  renamedEntityId: string,
+  oldName: string,
+  newName: string
+): string[] {
+  const db = getDb();
+  const ts = now();
+
+  const rows = db
+    .prepare("SELECT id, name, content, properties FROM entities WHERE project_id = ? AND content IS NOT NULL")
+    .all(projectId) as { id: string; name: string; content: string; properties: string }[];
+
+  const updated: string[] = [];
+
+  for (const row of rows) {
+    // Skip the entity that was just renamed (already has new name)
+    if (row.id === renamedEntityId) continue;
+
+    // Skip historical session log entries (immutable audit records)
+    const props = JSON.parse(row.properties || "{}") as Record<string, unknown>;
+    if (props._reserved === "session_log") continue;
+
+    let doc: Record<string, unknown>;
+    try {
+      doc = JSON.parse(row.content) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const { doc: updatedDoc, changed } = replaceTextInTiptapDoc(doc, oldName, newName);
+    if (!changed) continue;
+
+    db.prepare("UPDATE entities SET content = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(updatedDoc), ts, row.id);
+
+    updated.push(row.name);
+  }
+
+  if (updated.length > 0) {
+    appendToSessionLog(
+      projectId,
+      userId,
+      `Synced references: "${oldName}" → "${newName}" in ${updated.length} file(s): ${updated.join(", ")}`
+    );
+  }
+
+  return updated;
 }

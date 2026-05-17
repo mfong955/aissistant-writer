@@ -24,11 +24,22 @@ export function ModelSelector({ selectedModelId, onSelect, onNoApiKey }: ModelSe
         return res.json();
       })
       .then((data) => {
-        setModels(data.models || []);
+        const models: OpenRouterModel[] = data.models || [];
+        setModels(models);
         onNoApiKey?.(false);
-        // Auto-select first model if none selected
-        if (!selectedModelId && data.models?.length > 0) {
-          onSelect(data.models[0].id, data.models[0].context_length);
+        if (!selectedModelId && models.length > 0) {
+          // Prefer Claude Sonnet (best balance for writing), fall back to first available
+          const PREFERRED = [
+            "anthropic/claude-sonnet-4-6",
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3-sonnet",
+          ];
+          const preferred =
+            PREFERRED.map((id) => models.find((m) => m.id === id)).find(Boolean) ??
+            models.find((m) => m.id.includes("claude") && m.id.includes("sonnet")) ??
+            models[0];
+          onSelect(preferred.id, preferred.context_length);
         }
       })
       .catch((err) => {

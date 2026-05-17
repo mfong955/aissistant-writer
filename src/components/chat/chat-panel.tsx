@@ -51,6 +51,7 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
     sendMessage,
     stopStreaming,
     clearMessages,
+    addSystemMessage,
     totalPromptTokens,
     totalCompletionTokens,
     contextInfo,
@@ -61,6 +62,15 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
     contextLimit,
     onEntityChange,
   });
+
+  // Listen for rename-sync events from the explorer
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ message: string }>) => {
+      addSystemMessage(e.detail.message);
+    };
+    window.addEventListener("aissistant:rename-synced", handler as EventListener);
+    return () => window.removeEventListener("aissistant:rename-synced", handler as EventListener);
+  }, [addSystemMessage]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -219,7 +229,7 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
       </div>
       <div style={{ height: `${inputAreaHeight}px` }} className="shrink-0 overflow-hidden">
         <ChatInput
-          onSend={sendMessage}
+          onSend={(msg, images) => sendMessage(msg, images)}
           onStop={stopStreaming}
           isStreaming={isStreaming}
           disabled={!modelId}

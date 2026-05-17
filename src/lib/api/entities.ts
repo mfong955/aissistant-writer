@@ -29,14 +29,13 @@ export async function createEntity(params: {
 export async function updateEntity(
   id: string,
   updates: Partial<Pick<Entity, "name" | "content" | "properties" | "sort_order" | "parent_id" | "version_hash">> & { project_id: string }
-): Promise<Entity> {
+): Promise<{ entity: Entity; renamedFrom?: string }> {
   const res = await fetch(`/api/entities/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
-  const data = (await res.json()) as { entity: Entity };
-  return data.entity;
+  return res.json() as Promise<{ entity: Entity; renamedFrom?: string }>;
 }
 
 export async function deleteEntity(id: string, projectId: string): Promise<void> {
@@ -49,5 +48,6 @@ export async function saveEntityContent(
   content: Record<string, unknown>,
   versionHash: string
 ): Promise<Entity> {
-  return updateEntity(id, { project_id: projectId, content, version_hash: versionHash });
+  const { entity } = await updateEntity(id, { project_id: projectId, content, version_hash: versionHash });
+  return entity;
 }

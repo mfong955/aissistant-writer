@@ -1,4 +1,30 @@
 /**
+ * Walk a Tiptap JSON doc and replace all occurrences of oldText in text nodes.
+ * Returns the updated doc and whether any replacements were made.
+ */
+export function replaceTextInTiptapDoc(
+  doc: Record<string, unknown>,
+  oldText: string,
+  newText: string
+): { doc: Record<string, unknown>; changed: boolean } {
+  let changed = false;
+
+  function walk(node: Record<string, unknown>): Record<string, unknown> {
+    if (node.type === "text" && typeof node.text === "string" && node.text.includes(oldText)) {
+      changed = true;
+      return { ...node, text: (node.text as string).split(oldText).join(newText) };
+    }
+    if (Array.isArray(node.content)) {
+      const newContent = (node.content as Record<string, unknown>[]).map(walk);
+      return { ...node, content: newContent };
+    }
+    return node;
+  }
+
+  return { doc: walk(doc), changed };
+}
+
+/**
  * Convert plain text to Tiptap JSON document format.
  * Splits on double newlines to create paragraphs.
  */

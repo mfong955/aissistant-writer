@@ -80,6 +80,7 @@ export function buildSystemPrompt(params: {
   projectName: string;
   projectType?: ProjectType | null;
   systemInstructions?: string | null;
+  projectProgress?: string | null;
   projectState?: string;
   entitySummaries?: Array<{ name: string; type: string; summary: string }>;
   activeEntityContent?: { name: string; type: string; content: string };
@@ -110,7 +111,9 @@ Guidelines:
 - Before updating an entity, call read_entity to see its current content (unless it's already shown in "Currently Editing" below)
 - When the user mentions a character, chapter, or other entity by name, look up its ID in the Project Files list
 - If no entities exist yet, help the user create their first ones
-- You can answer general writing questions about technique, style, and overcoming writer's block`);
+- You can answer general writing questions about technique, style, and overcoming writer's block
+
+After any session where you created, updated, or deleted content: update the "Project Progress" entity using update_entity (find it by name in Project Files). Keep the file under 200 words — it is a live snapshot, not a journal. Overwrite "Last Session" with what you did this session; do not append. Move detailed notes to Logs/. Only current status, active focus, next steps, and key decisions belong in the progress file.`);
 
   // File organization guidance (always included)
   sections.push(`## File Organization\n${getDefaultFolderGuidance(params.projectType ?? null)}`);
@@ -118,6 +121,11 @@ Guidelines:
   // Custom project instructions (user-defined, injected after defaults so they can override)
   if (params.systemInstructions?.trim()) {
     sections.push(`## Project Instructions\n${params.systemInstructions.trim()}`);
+  }
+
+  // Project Progress (live snapshot — overwritten each session by the AI)
+  if (params.projectProgress?.trim()) {
+    sections.push(`## Project Progress\n${params.projectProgress.trim()}`);
   }
 
   // Entity index
