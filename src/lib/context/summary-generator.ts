@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { getLocalUserId } from "@/lib/local-user";
+import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { decryptApiKey } from "@/lib/encryption";
 
 export async function generateEntitySummary(params: {
@@ -9,14 +10,8 @@ export async function generateEntitySummary(params: {
   entityType: string;
   content: string;
 }): Promise<string> {
-  const supabase = await createClient();
-
-  // Get user's API key
-  const { data: settings } = await supabase
-    .from("user_settings")
-    .select("openrouter_api_key_encrypted, preferred_model_id")
-    .eq("user_id", params.userId)
-    .single();
+  const userId = getLocalUserId();
+  const settings = dbGetUserSettings(userId);
 
   if (!settings?.openrouter_api_key_encrypted) {
     throw new Error("No API key configured");
@@ -55,7 +50,7 @@ export async function generateEntitySummary(params: {
   }
 
   const data = await response.json();
-  return data.choices[0]?.message?.content || "No summary generated.";
+  return (data.choices[0]?.message?.content as string) || "No summary generated.";
 }
 
 export async function generateProjectState(params: {
@@ -64,13 +59,8 @@ export async function generateProjectState(params: {
   projectName: string;
   entitySummaries: Array<{ name: string; type: string; summary: string }>;
 }): Promise<string> {
-  const supabase = await createClient();
-
-  const { data: settings } = await supabase
-    .from("user_settings")
-    .select("openrouter_api_key_encrypted, preferred_model_id")
-    .eq("user_id", params.userId)
-    .single();
+  const userId = getLocalUserId();
+  const settings = dbGetUserSettings(userId);
 
   if (!settings?.openrouter_api_key_encrypted) {
     throw new Error("No API key configured");
@@ -113,5 +103,5 @@ export async function generateProjectState(params: {
   }
 
   const data = await response.json();
-  return data.choices[0]?.message?.content || "No project state generated.";
+  return (data.choices[0]?.message?.content as string) || "No project state generated.";
 }

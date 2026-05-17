@@ -8,7 +8,6 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { Project, Entity } from "@/types/database";
 
 interface ProjectContextValue {
@@ -34,15 +33,10 @@ export function ProjectProvider({
 
   const refreshEntities = useCallback(async () => {
     if (!project) return;
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("entities")
-      .select("*")
-      .eq("project_id", project.id)
-      .order("sort_order", { ascending: true });
-
-    if (!error && data) {
-      setEntities(data);
+    const res = await fetch(`/api/entities?project_id=${project.id}`);
+    const data = (await res.json()) as { entities: Entity[] };
+    if (data.entities) {
+      setEntities(data.entities);
     }
     setLoading(false);
   }, [project]);
@@ -52,9 +46,7 @@ export function ProjectProvider({
   }, [refreshEntities]);
 
   return (
-    <ProjectContext.Provider
-      value={{ project, entities, loading, refreshEntities, setProject }}
-    >
+    <ProjectContext.Provider value={{ project, entities, loading, refreshEntities, setProject }}>
       {children}
     </ProjectContext.Provider>
   );

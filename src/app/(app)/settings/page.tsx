@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/client";
-
 export default function SettingsPage() {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
@@ -19,14 +17,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("user_settings")
-      .select("openrouter_api_key_encrypted")
-      .single()
-      .then(({ data }) => {
-        setHasKey(!!data?.openrouter_api_key_encrypted);
-      });
+    fetch("/api/settings/api-key")
+      .then((r) => r.json())
+      .then((data: { hasKey: boolean }) => setHasKey(data.hasKey));
   }, []);
 
   async function handleSave() {

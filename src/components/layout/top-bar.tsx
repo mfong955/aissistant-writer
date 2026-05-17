@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PenLine, Settings, LogOut, ChevronLeft } from "lucide-react";
+import { PenLine, Settings, SlidersHorizontal, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { signOut } from "@/lib/auth/actions";
 import { useProject } from "@/contexts/project-context";
+import { ProjectSettingsDialog } from "@/components/project/project-settings-dialog";
 
 export function TopBar() {
   const { project } = useProject();
@@ -26,16 +26,16 @@ export function TopBar() {
         <span className="font-medium">{project?.name}</span>
       </div>
       <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="icon" asChild title="Settings">
+        <ProjectSettingsDialog>
+          <Button variant="ghost" size="icon" title="Project settings">
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+        </ProjectSettingsDialog>
+        <Button variant="ghost" size="icon" asChild title="App settings">
           <Link href="/settings">
             <Settings className="h-4 w-4" />
           </Link>
         </Button>
-        <form action={signOut}>
-          <Button variant="ghost" size="icon" type="submit" title="Sign out">
-            <LogOut className="h-4 w-4" />
-          </Button>
-        </form>
       </div>
     </div>
   );

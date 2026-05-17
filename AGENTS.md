@@ -42,11 +42,10 @@ When this file is used as a template for a new project, the static sections carr
 
 ### Status
 
-Phase 1 MVP — code complete. All 10 implementation steps finished. Build passes cleanly. Needs Supabase project setup + migration to be deployed and tested end-to-end.
+Architecture migrated to **local-first + encrypted cloud sync**. Build passes. App runs with zero configuration — no Supabase setup needed to develop or use locally.
 
 **What's done:**
 - Project scaffolding (Next.js 15 + TypeScript + Tailwind v4 + shadcn/ui)
-- Database schema (9 tables with RLS policies) + auth flow (email/password)
 - VS Code-like 3-panel layout with allotment (resizable, chat toggleable)
 - Project explorer (tree view, CRUD, rename, type icons)
 - Tiptap editor with tabs, autosave (2s debounce + SHA-256 hash)
@@ -55,13 +54,22 @@ Phase 1 MVP — code complete. All 10 implementation steps finished. Build passe
 - AI chat panel (SSE streaming, tool calls, token/cost tracking, model selector)
 - Hierarchical context system (L0/L1/L2 context builder, relevance scoring, summary generation)
 - Session tracking (heartbeat, inactivity detection, session history)
-- File upload (drag-and-drop, Supabase Storage, 10MB limit)
+- File upload (drag-and-drop, stored locally in `.data/uploads/`, 10MB limit)
+- **Local SQLite data layer** (`src/lib/db/`) — all data stored in `.data/database.db`
+- **Local user identity** (`src/lib/local-user.ts`) — UUID in `.data/user.json`, no login required
+- **No Supabase required** — middleware, auth, and all API routes run fully offline
 
-**What's needed to deploy:**
-1. Create Supabase project, add URL + anon key to `.env.local`
-2. Run migration: `supabase/migrations/001_initial_schema.sql`
-3. Set a secure `ENCRYPTION_KEY` in `.env.local`
-4. Create `uploads` storage bucket in Supabase dashboard
+**To run locally:**
+```bash
+npm install
+ENCRYPTION_KEY=any-32-char-secret npm run dev
+```
+
+**What's next:**
+1. Tauri desktop wrapper (Rust installed, ready to proceed)
+2. E2E encrypted Supabase cloud sync (backup/restore)
+3. Conflict resolution UI with diff view (offline work + sync)
+4. Recovery key flow (required for E2E encryption)
 
 **Phases overview:**
 - **Phase 1 (MVP):** Chat-first authoring, project organization, BYOK AI via OpenRouter, hierarchical context system, token/cost tracking, file upload, change logging, session tracking
@@ -101,7 +109,12 @@ Options considered: Send everything (wasteful), RAG only (loses holistic underst
 Chose: Hierarchical summarization (L0/L1/L2) with targeted retrieval
 Reasoning: L2 project state (~2-4K tokens, always included) gives the AI baseline understanding. L1 file summaries (~200-500 tokens each, loaded by relevance) provide detail on specific entities. L0 full content loaded only for the file being actively discussed. Change detection via file hashing ensures AI stays current even when user edits without telling it. This approach works efficiently across all context window sizes.
 
-**[2026-02-04] Styling**
+**[2026-05-17] Local-first architecture**
+Options considered: Keep Supabase as primary DB, local SQLite + Supabase sync, other cloud providers
+Chose: Local SQLite as primary store; Supabase retained for auth + encrypted cloud backup (future)
+Reasoning: Desktop app target (Tauri) requires offline-first. Writers expect data to live on their machine (like Scrivener). E2E encryption before cloud upload means Supabase cannot read user content. No setup required for end users — app works immediately on install.
+
+**[2026-05-17] Styling**
 Options considered: Tailwind + shadcn/ui, Material UI, Chakra UI
 Chose: Tailwind CSS + shadcn/ui
 Reasoning: shadcn/ui provides accessible, well-designed components that are copied into the project (not a dependency). Tailwind enables rapid styling without CSS file proliferation. Both are standard in the Next.js ecosystem.

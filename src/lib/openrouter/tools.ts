@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "./types";
-import { createClient } from "@/lib/supabase/server";
+import { getDb } from "@/lib/db/database";
 import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
+import { appendToSessionLog } from "@/lib/db/entities";
 import type { EntityType } from "@/types/database";
 
 export const entityTools: ToolDefinition[] = [
@@ -15,8 +16,7 @@ export const entityTools: ToolDefinition[] = [
         properties: {
           entity_id: {
             type: "string",
-            description:
-              "The ID of the entity to read (from the Project Files list)",
+            description: "The ID of the entity to read (from the Project Files list)",
           },
         },
         required: ["entity_id"],
@@ -28,36 +28,23 @@ export const entityTools: ToolDefinition[] = [
     function: {
       name: "create_entity",
       description:
-        "Create a new entity in the project (character, chapter, outline, note, world_building, folder, or custom). Use this when the user describes a new character, chapter, scene, or any other content that should be stored as a separate file.",
+        "Create a new entity in the project (character, chapter, outline, note, world_building, folder, or custom). IMPORTANT PLACEMENT RULES: Always check the Project Files list in the system prompt for existing folder IDs. Non-folder entities MUST use parent_id to place them in the correct folder (e.g. characters go in the Characters/ folder, chapters go in Chapters/, etc.). If the correct folder does not exist yet, call create_entity with type='folder' first to create it, then immediately call create_entity again for the actual entity with parent_id set to the new folder's ID. Never place content entities at the root level if an appropriate folder exists or should exist.",
       parameters: {
         type: "object",
         properties: {
-          name: {
-            type: "string",
-            description: "Name of the entity",
-          },
+          name: { type: "string", description: "Name of the entity" },
           type: {
             type: "string",
-            enum: [
-              "character",
-              "chapter",
-              "outline",
-              "note",
-              "world_building",
-              "folder",
-              "custom",
-            ],
+            enum: ["character", "chapter", "outline", "note", "world_building", "folder", "custom"],
             description: "Type of entity to create",
           },
           content: {
             type: "string",
-            description:
-              "The content for the entity in plain text. This will be converted to the editor format.",
+            description: "The content for the entity in plain text. This will be converted to the editor format.",
           },
           parent_id: {
             type: "string",
-            description:
-              "ID of the parent folder to create this entity in. Omit to create at root level.",
+            description: "ID of the parent folder entity (from the Project Files list). Required for all non-folder entities — look up the folder's ID in Project Files and always set this.",
           },
         },
         required: ["name", "type", "content"],
@@ -73,18 +60,9 @@ export const entityTools: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          entity_id: {
-            type: "string",
-            description: "The ID of the entity to update",
-          },
-          content: {
-            type: "string",
-            description: "The new content for the entity in plain text.",
-          },
-          name: {
-            type: "string",
-            description: "New name for the entity (only if renaming)",
-          },
+          entity_id: { type: "string", description: "The ID of the entity to update" },
+          content: { type: "string", description: "The new content for the entity in plain text." },
+          name: { type: "string", description: "New name for the entity (only if renaming)" },
         },
         required: ["entity_id", "content"],
       },
@@ -99,10 +77,7 @@ export const entityTools: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          entity_id: {
-            type: "string",
-            description: "The ID of the entity to delete",
-          },
+          entity_id: { type: "string", description: "The ID of the entity to delete" },
         },
         required: ["entity_id"],
       },
@@ -116,168 +91,149 @@ export async function executeToolCall(
   projectId: string,
   userId: string
 ): Promise<{ success: boolean; result: Record<string, unknown>; description: string }> {
-  const supabase = await createClient();
+  const db = getDb();
 
   switch (toolName) {
     case "read_entity": {
       const entityId = args.entity_id as string;
+      const entity = db
+        .prepare("SELECT id, name, type, content FROM entities WHERE id = ? AND project_id = ?")
+        .get(entityId, projectId) as { id: string; name: string; type: string; content: string | null } | undefined;
 
-      const { data: entity, error } = await supabase
-        .from("entities")
-        .select("id, name, type, content")
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .single();
-
-      if (error || !entity) {
-        return {
-          success: false,
-          result: { error: error?.message || "Entity not found" },
-          description: `Failed to read entity ${entityId}`,
-        };
+      if (!entity) {
+        return { success: false, result: { error: "Entity not found" }, description: `Failed to read entity ${entityId}` };
       }
 
       const contentText = entity.content
-        ? extractTextFromTiptap(entity.content as Record<string, unknown>)
+        ? extractTextFromTiptap(JSON.parse(entity.content) as Record<string, unknown>)
         : "(empty)";
 
       return {
         success: true,
-        result: {
-          entity_id: entity.id,
-          name: entity.name,
-          type: entity.type,
-          content: contentText,
-        },
+        result: { entity_id: entity.id, name: entity.name, type: entity.type, content: contentText },
         description: `Read ${entity.type}: ${entity.name}`,
       };
     }
 
     case "create_entity": {
       const content = textToTiptapJson(args.content as string);
-      const { data, error } = await supabase
-        .from("entities")
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          name: args.name as string,
-          type: args.type as EntityType,
-          content,
-          parent_id: (args.parent_id as string) || null,
-          sort_order: 0,
-        })
-        .select()
-        .single();
+      const id = crypto.randomUUID();
+      const ts = new Date().toISOString();
 
-      if (error) {
+      try {
+        db.prepare(
+          `INSERT INTO entities (id, project_id, user_id, name, type, content, parent_id, sort_order, properties, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, '{}', ?, ?)`
+        ).run(
+          id,
+          projectId,
+          userId,
+          args.name as string,
+          args.type as EntityType,
+          JSON.stringify(content),
+          (args.parent_id as string) || null,
+          ts,
+          ts
+        );
+
+        db.prepare(
+          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
+           VALUES (?, ?, ?, ?, 'create', 'ai', ?, ?)`
+        ).run(crypto.randomUUID(), projectId, userId, id, `Created ${args.type}: ${args.name}`, ts);
+
+        appendToSessionLog(projectId, userId, `Created ${args.type}: ${args.name as string}`);
+        return {
+          success: true,
+          result: { entity_id: id, name: args.name as string, type: args.type as string },
+          description: `Created ${args.type}: ${args.name}`,
+        };
+      } catch (err) {
         return {
           success: false,
-          result: { error: error.message },
+          result: { error: err instanceof Error ? err.message : "Unknown error" },
           description: `Failed to create ${args.type}: ${args.name}`,
         };
       }
-
-      // Log the change
-      await supabase.from("change_logs").insert({
-        project_id: projectId,
-        user_id: userId,
-        entity_id: data.id,
-        action: "create",
-        actor: "ai",
-        description: `Created ${args.type}: ${args.name}`,
-      });
-
-      return {
-        success: true,
-        result: { entity_id: data.id, name: data.name, type: data.type },
-        description: `Created ${args.type}: ${args.name}`,
-      };
     }
 
     case "update_entity": {
       const entityId = args.entity_id as string;
       const content = textToTiptapJson(args.content as string);
-      const updates: Record<string, unknown> = { content };
-      if (args.name) updates.name = args.name;
+      const ts = new Date().toISOString();
 
-      const { data, error } = await supabase
-        .from("entities")
-        .update(updates)
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .select()
-        .single();
+      const entity = db
+        .prepare("SELECT name, type FROM entities WHERE id = ? AND project_id = ?")
+        .get(entityId, projectId) as { name: string; type: string } | undefined;
 
-      if (error) {
+      if (!entity) {
+        return { success: false, result: { error: "Entity not found" }, description: `Failed to update entity ${entityId}` };
+      }
+
+      const name = (args.name as string | undefined) || entity.name;
+
+      try {
+        db.prepare("UPDATE entities SET content = ?, name = ?, updated_at = ? WHERE id = ? AND project_id = ?")
+          .run(JSON.stringify(content), name, ts, entityId, projectId);
+
+        db.prepare(
+          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
+           VALUES (?, ?, ?, ?, 'update', 'ai', ?, ?)`
+        ).run(crypto.randomUUID(), projectId, userId, entityId, `Updated ${entity.type}: ${name}`, ts);
+
+        appendToSessionLog(projectId, userId, `Updated ${entity.type}: ${name}`);
+        return {
+          success: true,
+          result: { entity_id: entityId, name, type: entity.type },
+          description: `Updated ${entity.type}: ${name}`,
+        };
+      } catch (err) {
         return {
           success: false,
-          result: { error: error.message },
+          result: { error: err instanceof Error ? err.message : "Unknown error" },
           description: `Failed to update entity ${entityId}`,
         };
       }
-
-      await supabase.from("change_logs").insert({
-        project_id: projectId,
-        user_id: userId,
-        entity_id: entityId,
-        action: "update",
-        actor: "ai",
-        description: `Updated ${data.type}: ${data.name}`,
-      });
-
-      return {
-        success: true,
-        result: { entity_id: data.id, name: data.name, type: data.type },
-        description: `Updated ${data.type}: ${data.name}`,
-      };
     }
 
     case "delete_entity": {
       const entityId = args.entity_id as string;
 
-      // Get entity info before deleting
-      const { data: entity } = await supabase
-        .from("entities")
-        .select("name, type")
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .single();
+      const entity = db
+        .prepare("SELECT name, type FROM entities WHERE id = ? AND project_id = ?")
+        .get(entityId, projectId) as { name: string; type: string } | undefined;
 
-      const { error } = await supabase
-        .from("entities")
-        .delete()
-        .eq("id", entityId)
-        .eq("project_id", projectId);
+      try {
+        db.prepare("DELETE FROM entities WHERE id = ? AND project_id = ?").run(entityId, projectId);
 
-      if (error) {
+        const ts = new Date().toISOString();
+        db.prepare(
+          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
+           VALUES (?, ?, ?, ?, 'delete', 'ai', ?, ?)`
+        ).run(
+          crypto.randomUUID(),
+          projectId,
+          userId,
+          entityId,
+          `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
+          ts
+        );
+
+        appendToSessionLog(projectId, userId, `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`);
+        return {
+          success: true,
+          result: { entity_id: entityId, deleted: true },
+          description: `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
+        };
+      } catch (err) {
         return {
           success: false,
-          result: { error: error.message },
+          result: { error: err instanceof Error ? err.message : "Unknown error" },
           description: `Failed to delete entity ${entityId}`,
         };
       }
-
-      await supabase.from("change_logs").insert({
-        project_id: projectId,
-        user_id: userId,
-        entity_id: entityId,
-        action: "delete",
-        actor: "ai",
-        description: `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
-      });
-
-      return {
-        success: true,
-        result: { entity_id: entityId, deleted: true },
-        description: `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
-      };
     }
 
     default:
-      return {
-        success: false,
-        result: { error: `Unknown tool: ${toolName}` },
-        description: `Unknown tool: ${toolName}`,
-      };
+      return { success: false, result: { error: `Unknown tool: ${toolName}` }, description: `Unknown tool: ${toolName}` };
   }
 }

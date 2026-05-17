@@ -2,12 +2,14 @@
 
 import { useState, useMemo } from "react";
 import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useProject } from "@/contexts/project-context";
 import { buildTree } from "@/lib/entity-tree";
 import { createEntity, updateEntity, deleteEntity } from "@/lib/api/entities";
 import { TreeNode } from "./tree-node";
 import { CreateEntityDialog } from "./create-entity-dialog";
+import { EntityIcon } from "./entity-icon";
 import type { EntityType } from "@/types/database";
 
 interface ProjectExplorerProps {
@@ -23,7 +25,15 @@ export function ProjectExplorer({
   const [showCreate, setShowCreate] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
 
-  const tree = useMemo(() => buildTree(entities), [entities]);
+  const instructionsEntity = useMemo(
+    () => entities.find((e) => e.name === "AI Instructions" && e.parent_id === null),
+    [entities]
+  );
+
+  const tree = useMemo(
+    () => buildTree(entities.filter((e) => e.name !== "AI Instructions" || e.parent_id !== null)),
+    [entities]
+  );
 
   async function handleCreate(name: string, type: EntityType, parentId?: string | null) {
     if (!project) return;
@@ -38,13 +48,15 @@ export function ProjectExplorer({
   }
 
   async function handleRename(entityId: string, newName: string) {
-    await updateEntity(entityId, { name: newName });
+    if (!project) return;
+    await updateEntity(entityId, { project_id: project.id, name: newName });
     await refreshEntities();
   }
 
   async function handleDelete(entityId: string) {
+    if (!project) return;
     if (!confirm("Delete this entity and all its children?")) return;
-    await deleteEntity(entityId);
+    await deleteEntity(entityId, project.id);
     await refreshEntities();
   }
 
@@ -75,7 +87,21 @@ export function ProjectExplorer({
         </Button>
       </div>
       <div className="flex-1 overflow-auto py-1">
-        {tree.length === 0 ? (
+        {/* AI Instructions — pinned at top */}
+        {instructionsEntity && (
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-sm px-1 py-0.5 text-sm hover:bg-accent cursor-pointer mx-1 mb-1",
+              selectedEntityId === instructionsEntity.id && "bg-accent"
+            )}
+            onClick={() => onSelectEntity(instructionsEntity.id)}
+          >
+            <span className="w-3.5 shrink-0" />
+            <EntityIcon type={instructionsEntity.type} name={instructionsEntity.name} className="h-4 w-4 shrink-0" />
+            <span className="flex-1 truncate text-purple-500 font-medium">{instructionsEntity.name}</span>
+          </div>
+        )}
+        {tree.length === 0 && !instructionsEntity ? (
           <div className="px-3 py-8 text-center text-xs text-muted-foreground">
             <p>No entities yet</p>
             <Button

@@ -23,6 +23,23 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
   const [noApiKey, setNoApiKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Drag-to-resize input area
+  const [inputAreaHeight, setInputAreaHeight] = useState(100);
+  const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
+
+  function handleDragPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { dragging: true, startY: e.clientY, startHeight: inputAreaHeight };
+  }
+  function handleDragPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current.dragging) return;
+    const delta = dragRef.current.startY - e.clientY;
+    setInputAreaHeight(Math.max(72, Math.min(520, dragRef.current.startHeight + delta)));
+  }
+  function handleDragPointerUp() {
+    dragRef.current.dragging = false;
+  }
+
   const handleModelSelect = useCallback((id: string, ctxLength: number) => {
     setModelId(id);
     setContextLimit(ctxLength);
@@ -152,6 +169,20 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
+            {isStreaming &&
+              messages.length > 0 &&
+              messages[messages.length - 1].role === "assistant" &&
+              !messages[messages.length - 1].content &&
+              !messages[messages.length - 1].toolCalls?.length && (
+                <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                  <span className="flex gap-1">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "300ms" }} />
+                  </span>
+                  <span>Thinking…</span>
+                </div>
+              )}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -176,12 +207,24 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
         </div>
       )}
 
-      <ChatInput
-        onSend={sendMessage}
-        onStop={stopStreaming}
-        isStreaming={isStreaming}
-        disabled={!modelId}
-      />
+      {/* Drag handle */}
+      <div
+        className="flex h-2.5 cursor-ns-resize select-none items-center justify-center border-t hover:bg-accent/60 active:bg-accent"
+        onPointerDown={handleDragPointerDown}
+        onPointerMove={handleDragPointerMove}
+        onPointerUp={handleDragPointerUp}
+        title="Drag to resize input area"
+      >
+        <div className="h-0.5 w-8 rounded-full bg-border" />
+      </div>
+      <div style={{ height: `${inputAreaHeight}px` }} className="shrink-0 overflow-hidden">
+        <ChatInput
+          onSend={sendMessage}
+          onStop={stopStreaming}
+          isStreaming={isStreaming}
+          disabled={!modelId}
+        />
+      </div>
     </div>
   );
 }

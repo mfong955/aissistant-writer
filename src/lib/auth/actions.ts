@@ -1,46 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 
-export async function signUp(formData: FormData) {
-  const supabase = await createClient();
+// Auth is a no-op in local mode. These stubs satisfy any existing callers
+// and will be replaced when cloud sync + Supabase auth is re-enabled.
 
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
+export async function signUp() {
   redirect("/");
 }
 
-export async function signIn(formData: FormData) {
-  const supabase = await createClient();
-
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
+export async function signIn() {
   redirect("/");
 }
 
 export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  redirect("/");
 }

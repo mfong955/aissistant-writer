@@ -89,7 +89,8 @@ export function TreeNode({
         <EntityIcon
           type={node.entity.type}
           isOpen={isFolder && expanded}
-          className="h-4 w-4 shrink-0 text-muted-foreground"
+          name={node.entity.name}
+          className="h-4 w-4 shrink-0"
         />
         {editing ? (
           <input

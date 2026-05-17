@@ -45,7 +45,8 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
   }, [activeTab, entities]);
 
   const { debouncedSave, isSaving, lastSaved, initializeHash } = useAutosave(
-    activeEntity?.id || null
+    activeEntity?.id || null,
+    activeEntity?.project_id || null
   );
 
   const handleUpdate = useCallback(

@@ -49,3 +49,6 @@ htmlcov/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# Local data (SQLite database, uploads, user identity)
+.data/

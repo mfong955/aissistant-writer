@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, FolderOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import type { Project } from "@/types/database";
 
@@ -13,41 +12,32 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   useEffect(() => {
-    async function loadProjects() {
-      const { data } = await supabase
-        .from("projects")
-        .select("*")
-        .order("updated_at", { ascending: false });
-      setProjects(data || []);
-      setLoading(false);
-    }
-    loadProjects();
-  }, [supabase]);
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((data: { projects: Project[] }) => {
+        setProjects(data.projects || []);
+        setLoading(false);
+      });
+  }, []);
 
-  async function handleCreate(name: string, description: string) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from("projects")
-      .insert({ name, description: description || null, user_id: user.id })
-      .select()
-      .single();
-
-    if (!error && data) {
-      router.push(`/project/${data.id}`);
+  async function handleCreate(name: string, description: string, projectType: import("@/types/database").ProjectType | null) {
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description: description || null, project_type: projectType }),
+    });
+    const data = (await res.json()) as { project: Project };
+    if (data.project) {
+      router.push(`/project/${data.project.id}`);
     }
   }
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm("Delete this project? This cannot be undone.")) return;
-    await supabase.from("projects").delete().eq("id", id);
+    await fetch(`/api/projects/${id}`, { method: "DELETE" });
     setProjects((prev) => prev.filter((p) => p.id !== id));
   }
 
@@ -65,9 +55,7 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="mt-12 text-center text-muted-foreground">
-          Loading projects...
-        </div>
+        <div className="mt-12 text-center text-muted-foreground">Loading projects...</div>
       ) : projects.length === 0 ? (
         <div className="mt-12 text-center">
           <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground/50" />
@@ -87,13 +75,10 @@ export default function DashboardPage() {
               <div>
                 <h3 className="font-medium">{project.name}</h3>
                 {project.description && (
-                  <p className="text-sm text-muted-foreground">
-                    {project.description}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{project.description}</p>
                 )}
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Updated{" "}
-                  {new Date(project.updated_at).toLocaleDateString()}
+                  Updated {new Date(project.updated_at).toLocaleDateString()}
                 </p>
               </div>
               <Button

@@ -1,30 +1,16 @@
-import { createClient } from "@/lib/supabase/server";
+import { getLocalUserId } from "@/lib/local-user";
 import { decryptApiKey } from "@/lib/encryption";
 import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
 import { entityTools, executeToolCall } from "@/lib/openrouter/tools";
 import { buildContext } from "@/lib/context/context-builder";
+import { dbGetUserSettings } from "@/lib/db/user-settings";
 import type { ChatCompletionMessage, StreamChunk, ToolCallResponse } from "@/lib/openrouter/types";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-    });
-  }
+  const userId = getLocalUserId();
 
   const body = await request.json();
-  const {
-    messages,
-    model_id,
-    project_id,
-    active_entity_ids,
-    context_limit,
-  } = body as {
+  const { messages, model_id, project_id, active_entity_ids, context_limit } = body as {
     messages: ChatCompletionMessage[];
     model_id: string;
     project_id: string;
@@ -39,51 +25,35 @@ export async function POST(request: Request) {
     );
   }
 
-  // Get API key
-  const { data: settings } = await supabase
-    .from("user_settings")
-    .select("openrouter_api_key_encrypted")
-    .eq("user_id", user.id)
-    .single();
-
+  const settings = dbGetUserSettings(userId);
   if (!settings?.openrouter_api_key_encrypted) {
-    return new Response(
-      JSON.stringify({ error: "No API key configured" }),
-      { status: 400 }
-    );
+    return new Response(JSON.stringify({ error: "No API key configured" }), { status: 400 });
   }
 
   let apiKey: string;
   try {
     apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
   } catch {
-    return new Response(
-      JSON.stringify({ error: "Failed to decrypt API key" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
   }
 
-  // Build hierarchical context server-side
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   const contextResult = await buildContext({
     projectId: project_id,
-    userId: user.id,
+    userId,
     userMessage: lastUserMessage?.content || "",
     activeEntityIds: active_entity_ids || [],
     contextLimit: context_limit || 128000,
   });
 
-  // Build message list with context-built system prompt
   const fullMessages: ChatCompletionMessage[] = [
     { role: "system", content: contextResult.systemPrompt },
     ...messages,
   ];
 
-  // Create SSE response stream
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      // Emit context info so client can display what was included
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({
@@ -102,7 +72,7 @@ export async function POST(request: Request) {
           messages: fullMessages,
           modelId: model_id,
           projectId: project_id,
-          userId: user.id,
+          userId,
           controller,
           encoder,
         });
@@ -136,8 +106,7 @@ async function processChat(params: {
   controller: ReadableStreamDefaultController;
   encoder: TextEncoder;
 }) {
-  const { apiKey, messages, modelId, projectId, userId, controller, encoder } =
-    params;
+  const { apiKey, messages, modelId, projectId, userId, controller, encoder } = params;
 
   const rawStream = await chatCompletion({
     apiKey,
@@ -151,10 +120,8 @@ async function processChat(params: {
   const reader = parsedStream.getReader();
 
   let accumulatedContent = "";
-  const accumulatedToolCalls: Map<
-    number,
-    { id: string; name: string; arguments: string }
-  > = new Map();
+  const accumulatedToolCalls: Map<number, { id: string; name: string; arguments: string }> =
+    new Map();
   let usage: { prompt_tokens: number; completion_tokens: number } | null = null;
 
   while (true) {
@@ -173,15 +140,10 @@ async function processChat(params: {
       );
     }
 
-    // Accumulate tool calls
     if (choice?.delta?.tool_calls) {
       for (const tc of choice.delta.tool_calls) {
         if (!accumulatedToolCalls.has(tc.index)) {
-          accumulatedToolCalls.set(tc.index, {
-            id: tc.id || "",
-            name: tc.function?.name || "",
-            arguments: "",
-          });
+          accumulatedToolCalls.set(tc.index, { id: tc.id || "", name: tc.function?.name || "", arguments: "" });
         }
         const existing = accumulatedToolCalls.get(tc.index)!;
         if (tc.id) existing.id = tc.id;
@@ -191,20 +153,12 @@ async function processChat(params: {
     }
 
     if (chunk.usage) {
-      usage = {
-        prompt_tokens: chunk.usage.prompt_tokens,
-        completion_tokens: chunk.usage.completion_tokens,
-      };
+      usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
     }
   }
 
-  // Process tool calls if any
   if (accumulatedToolCalls.size > 0) {
-    const toolResults: Array<{
-      toolCallId: string;
-      result: Record<string, unknown>;
-      description: string;
-    }> = [];
+    const toolResults: Array<{ toolCallId: string; result: Record<string, unknown>; description: string }> = [];
 
     for (const [, tc] of accumulatedToolCalls) {
       let args: Record<string, unknown>;
@@ -216,22 +170,13 @@ async function processChat(params: {
 
       controller.enqueue(
         encoder.encode(
-          `data: ${JSON.stringify({
-            type: "tool_call_start",
-            tool_call_id: tc.id,
-            name: tc.name,
-            arguments: args,
-          })}\n\n`
+          `data: ${JSON.stringify({ type: "tool_call_start", tool_call_id: tc.id, name: tc.name, arguments: args })}\n\n`
         )
       );
 
       const result = await executeToolCall(tc.name, args, projectId, userId);
 
-      toolResults.push({
-        toolCallId: tc.id,
-        result: result.result,
-        description: result.description,
-      });
+      toolResults.push({ toolCallId: tc.id, result: result.result, description: result.description });
 
       controller.enqueue(
         encoder.encode(
@@ -247,7 +192,6 @@ async function processChat(params: {
       );
     }
 
-    // Send tool results back to the model for a follow-up response
     const toolCallMessages: ChatCompletionMessage[] = [
       ...messages,
       {
@@ -270,14 +214,7 @@ async function processChat(params: {
       ),
     ];
 
-    // Get follow-up response (no tools this time to avoid loops)
-    const followUpStream = await chatCompletion({
-      apiKey,
-      messages: toolCallMessages,
-      model: modelId,
-      stream: true,
-    });
-
+    const followUpStream = await chatCompletion({ apiKey, messages: toolCallMessages, model: modelId, stream: true });
     const followUpParsed = parseSSEStream(followUpStream);
     const followUpReader = followUpParsed.getReader();
 
@@ -290,33 +227,24 @@ async function processChat(params: {
 
       if (choice?.delta?.content) {
         controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "text", content: choice.delta.content })}\n\n`
-          )
+          encoder.encode(`data: ${JSON.stringify({ type: "text", content: choice.delta.content })}\n\n`)
         );
       }
 
       if (chunk.usage) {
-        // Add to existing usage
         if (usage) {
           usage.prompt_tokens += chunk.usage.prompt_tokens;
           usage.completion_tokens += chunk.usage.completion_tokens;
         } else {
-          usage = {
-            prompt_tokens: chunk.usage.prompt_tokens,
-            completion_tokens: chunk.usage.completion_tokens,
-          };
+          usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
         }
       }
     }
   }
 
-  // Send final usage data
   if (usage) {
     controller.enqueue(
-      encoder.encode(
-        `data: ${JSON.stringify({ type: "usage", ...usage })}\n\n`
-      )
+      encoder.encode(`data: ${JSON.stringify({ type: "usage", ...usage })}\n\n`)
     );
   }
 }

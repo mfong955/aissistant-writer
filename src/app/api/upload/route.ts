@@ -1,157 +1,89 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getLocalUserId } from "@/lib/local-user";
+import {
+  dbCreateUploadedFile,
+  dbGetUploadedFiles,
+  dbGetUploadedFile,
+  dbDeleteUploadedFile,
+} from "@/lib/db/uploaded-files";
+import path from "path";
+import fs from "fs";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), ".data");
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const userId = getLocalUserId();
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const projectId = formData.get("project_id") as string | null;
   const entityId = formData.get("entity_id") as string | null;
 
   if (!file || !projectId) {
-    return NextResponse.json(
-      { error: "file and project_id are required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "file and project_id are required" }, { status: 400 });
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json(
-      { error: "File size exceeds 10MB limit" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "File size exceeds 10MB limit" }, { status: 400 });
   }
 
-  // Generate a unique storage path
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
   const ext = file.name.split(".").pop() || "bin";
-  const storagePath = `${user.id}/${projectId}/${crypto.randomUUID()}.${ext}`;
+  const fileName = `${crypto.randomUUID()}.${ext}`;
+  const storagePath = path.join(userId, projectId, fileName);
+  const fullPath = path.join(UPLOADS_DIR, storagePath);
 
-  // Upload to Supabase Storage
-  const { error: uploadError } = await supabase.storage
-    .from("uploads")
-    .upload(storagePath, file, {
-      contentType: file.type,
-      upsert: false,
-    });
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
 
-  if (uploadError) {
-    return NextResponse.json(
-      { error: `Upload failed: ${uploadError.message}` },
-      { status: 500 }
-    );
-  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  fs.writeFileSync(fullPath, buffer);
 
-  // Record in database
-  const { data: record, error: dbError } = await supabase
-    .from("uploaded_files")
-    .insert({
-      project_id: projectId,
-      user_id: user.id,
-      name: file.name,
-      mime_type: file.type,
-      size_bytes: file.size,
-      storage_path: storagePath,
-      entity_id: entityId || null,
-    })
-    .select("id, name, mime_type, size_bytes, created_at")
-    .single();
-
-  if (dbError) {
-    // Clean up the uploaded file if DB insert fails
-    await supabase.storage.from("uploads").remove([storagePath]);
-    return NextResponse.json(
-      { error: `Database error: ${dbError.message}` },
-      { status: 500 }
-    );
-  }
+  const record = dbCreateUploadedFile({
+    projectId,
+    userId,
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    storagePath,
+    entityId: entityId || null,
+  });
 
   return NextResponse.json({ file: record });
 }
 
 export async function GET(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const userId = getLocalUserId();
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("project_id");
 
   if (!projectId) {
-    return NextResponse.json(
-      { error: "project_id is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const { data: files, error } = await supabase
-    .from("uploaded_files")
-    .select("id, name, mime_type, size_bytes, entity_id, created_at")
-    .eq("project_id", projectId)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ files: files || [] });
+  const files = dbGetUploadedFiles(projectId, userId);
+  return NextResponse.json({ files });
 }
 
 export async function DELETE(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const userId = getLocalUserId();
   const { file_id } = await request.json();
 
   if (!file_id) {
-    return NextResponse.json(
-      { error: "file_id is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "file_id is required" }, { status: 400 });
   }
 
-  // Get storage path before deleting record
-  const { data: fileRecord } = await supabase
-    .from("uploaded_files")
-    .select("storage_path")
-    .eq("id", file_id)
-    .eq("user_id", user.id)
-    .single();
-
+  const fileRecord = dbGetUploadedFile(file_id, userId);
   if (!fileRecord) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
-  // Delete from storage
-  await supabase.storage.from("uploads").remove([fileRecord.storage_path]);
+  const fullPath = path.join(UPLOADS_DIR, fileRecord.storage_path);
+  if (fs.existsSync(fullPath)) {
+    fs.unlinkSync(fullPath);
+  }
 
-  // Delete from database
-  await supabase
-    .from("uploaded_files")
-    .delete()
-    .eq("id", file_id)
-    .eq("user_id", user.id);
-
+  dbDeleteUploadedFile(file_id, userId);
   return NextResponse.json({ ok: true });
 }

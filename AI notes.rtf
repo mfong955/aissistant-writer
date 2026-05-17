@@ -1,0 +1,48 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2869
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 - From the test, the files were created in the main explorer directory. I want the files to be created in a logical way, based on best practices. Please look up file structure best practices and help me figure this out. For example, I would imagine all characters to be in one folder, etc. \
+- A way to add unstructured notes to the AI, where the AI will be context aware of how to organize the notes in a way that follows best practices for AI and writers to understand. That is, the file structures are easy to navigate through and the AI knows where all of the files are, which I think should be mentioned in AGENTS.md. How can we make the AI that we are using to prompt to use AGENTS.md? How can we enforce best-practices for file locations, for any writing task? For now, we are testing with making novels. But what if the writer wants to create a non-fiction book? Do the best-practices apply to all different genres / texts? Like what if someone wants to create a text book about physics?\
+- How can we make sure the AI is ready to take on new tasks, without forgetting AGENTS.md and the progress? Do we already have a progress log that will be regularly checked by the AI? I want to keep context management in mind when we build this tool. All of the information the AI should need should be within AGENTS.md, I think. How can we ensure our progress is kept up to date as the user works with the AI?\
+- I want all of the files to be easily accessible in the UI. How can we test this? Can you provide a way to save a test case for us to work with, that we can upload for each iteration?\
+- How can we make revenue on this, when the user uses openrouter.ai? Are they charged themselves through openrouter.ai? Can we make a small amount of $ per prompt used, even with the free options? I want us to be able to make some revenue to continue developing this product, so I can dedicate more time to this project. \
+- How can the writer update the title and description of the project?\
+- When I use \'93Pop out\'94 from the chat, it takes up the entire screen. I feel like this pop out option is more like a full screen option. Can you make it so the user can choose the full screen icon and then choose the shrink screen option? I say this because the buttons for these functions are confusing. The expand explorer icon is at the top left, but I think it would be better placed in the explorer panel. Similarly with the chat button that minimizes / expands the AI chat panel. \
+- BTW if these are already completed, please let me know the locations and what I need to understand conceptually to know how to verify these. I haven\'92t worked on this project for a while so I forgot if we addressed these or not\
+===\
+- The AI chat is one of the main features. Can you make it so the chat can expand to half of the screen? Also please make the input chat area expandable vertically within the chat panel. People may want to input large prompts. Can you also make it so users can update files or links as well, similar to how Anthropic\'92s Claude does?\
+- When I am sending the example prompt you helped me create earlier, the files are not always created in a logical folder. Please help me think through what are strengths and weaknesses is in our current approach, and how to improve it so that all files will always be created in logical locations. I\'92d also love there to be color coding and icons in the explorer as well, so it is easier for users to navigate through. \
+- Also in the chat area, can you make it clear when the AI is working through something, like a loading icon while the AI is working?\
+===\
+In the AI chat area the input message area is still very small. Can you make it so the user can expand it vertically within the chat area?\
+===\
+- I love the AI chat panel icon that splits editor and chat 50/50, then when you click again to collapse back to default (380px). Can you also add a third toggle, so when you click it again (third time in rotation), it\'92ll minimize the chat panel, so that it shrinks the column/panel to the width of the icon itself? When toggled to this state, the chat area isn\'92t visible and needs to be toggled/clicked again (can click anywhere in this column to toggle again) to show the chat area. Thus, three toggle states\
+- Similar to the AI chat panel, can you do the same with the explorer panel?\
+- With this implemented, you can get rid of the chat and expanding explorer icons on the top right of the screen, in the navigation bar (is it called this?) ?\
+===\
+- The explorer expanding icon is at the bottom. Can you move it to the top of the panel? \
+- I feel that for every writing project, the AGENTS.md file should be viewable. That way the user can edit how the AI behaves directly, and view the progress whenever they need it. Can you also add a log folder that the AI can leave notes on for each session? This log will be updated automatically by the AI whenever any changes are made that is worth adding to the log. The log can be updated by the user, but wouldn\'92t be recommended.  \
+===\
+The explorer expanding icon moves every time the user clicks it. Can you move it to the left? like how the AI chat expanding icon is on the far right, so what when I click the AI chat expanding icon, I don\'92t have to move my mouse to toggle.\
+===\
+- For the AI instructions, what are the strength and weaknesses of this? Is there another location where the file locations / logic is placed? How does the AI in the app know this logic, and know where to update the logs, and what the progress is? The progress is very important and should be updated after every session, so the user can just open up the app and switch AIs at any time and the AI will know where the project progress has left off\
+===\
+\
+\
+\
+\
+\
+===\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 About the revenue conversation, can you help me think through: \
+- maybe we can set it up so we have an account on openrouter.ai that uses auto-top-up for users. Then we will also restrict the model options for them (the top options for writing text / story telling / and anything used for writing in general) and give a recommended option for them. That way we will always ensure that there are credits but also have a way to charge a small amount per prompt. Is that doable? What are the strengths and weaknesses in this? Do you have other recommendations? This means we will need users to sign in. How can we get this set up? \
+- Whatever method we go with: When I refresh the page, the previously used AI in the AI chat area should persist. It currently doesn\'92t and resets to whatever default every time.\
+Can you help me add this to our plan? \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \
+\
+}

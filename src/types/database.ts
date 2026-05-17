@@ -10,11 +10,23 @@ export type EntityType =
 export type ChangeAction = "create" | "update" | "delete" | "rename" | "move";
 export type ChangeActor = "user" | "ai";
 
+export type ProjectType =
+  | "novel"
+  | "short_story"
+  | "non_fiction"
+  | "textbook"
+  | "screenplay"
+  | "poetry"
+  | "game_narrative"
+  | "other";
+
 export interface Project {
   id: string;
   user_id: string;
   name: string;
   description: string | null;
+  project_type: ProjectType | null;
+  system_instructions: string | null;
   settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;

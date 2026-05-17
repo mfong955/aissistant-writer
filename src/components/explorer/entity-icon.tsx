@@ -7,7 +7,11 @@ import {
   File,
   Folder,
   FolderOpen,
+  Sparkles,
+  History,
+  ScrollText,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { EntityType } from "@/types/database";
 
 const iconMap: Record<EntityType, React.ComponentType<{ className?: string }>> = {
@@ -20,18 +24,45 @@ const iconMap: Record<EntityType, React.ComponentType<{ className?: string }>> =
   folder: Folder,
 };
 
+const colorMap: Record<EntityType, string> = {
+  character: "text-blue-500",
+  chapter: "text-amber-500",
+  outline: "text-violet-500",
+  note: "text-yellow-500",
+  world_building: "text-emerald-500",
+  custom: "text-slate-400",
+  folder: "text-orange-400",
+};
+
 export function EntityIcon({
   type,
   isOpen,
+  name,
   className,
 }: {
   type: EntityType;
   isOpen?: boolean;
+  name?: string;
   className?: string;
 }) {
-  if (type === "folder" && isOpen) {
-    return <FolderOpen className={className} />;
+  // Reserved special entities get distinct icons and colors
+  if (name === "AI Instructions") {
+    return <Sparkles className={cn("text-purple-500", className)} />;
   }
-  const Icon = iconMap[type] || File;
-  return <Icon className={className} />;
+  if (name === "Logs") {
+    return isOpen
+      ? <History className={cn("text-indigo-400", className)} />
+      : <History className={cn("text-indigo-400", className)} />;
+  }
+  // Entries inside the Logs folder
+  if (type === "note" && name?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return <ScrollText className={cn("text-indigo-300", className)} />;
+  }
+
+  const color = colorMap[type] ?? "text-muted-foreground";
+  if (type === "folder" && isOpen) {
+    return <FolderOpen className={cn(color, className)} />;
+  }
+  const Icon = iconMap[type] ?? File;
+  return <Icon className={cn(color, className)} />;
 }
