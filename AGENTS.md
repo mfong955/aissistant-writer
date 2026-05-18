@@ -70,6 +70,7 @@ ENCRYPTION_KEY=any-32-char-secret npm run dev
 2. E2E encrypted Supabase cloud sync (backup/restore)
 3. Conflict resolution UI with diff view (offline work + sync)
 4. Recovery key flow (required for E2E encryption)
+5. **Phase 2 Billing (proxied AI):** Supabase auth + OpenRouter provisioned key + per-prompt wallet system (see Phase 2 in Phases overview)
 
 **Phases overview:**
 - **Phase 1 (MVP):** Chat-first authoring, project organization, BYOK AI via OpenRouter, hierarchical context system, token/cost tracking, file upload, change logging, session tracking

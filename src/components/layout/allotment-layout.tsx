@@ -99,16 +99,19 @@ export function AllotmentLayout({ sidebar, editor, chat }: AllotmentLayoutProps)
 
         {/* ── Chat ── */}
         <Allotment.Pane preferredSize={CHAT_NORMAL} minSize={MINIMIZED}>
-          {chatState === "minimized" ? (
-            <div
-              className="h-full flex items-center justify-center border-l cursor-pointer hover:bg-accent/50 transition-colors"
-              onClick={cycleChat}
-              title="Show chat"
-            >
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="flex h-full flex-col border-l">
+          <div className="h-full relative">
+            {/* Minimized placeholder — only visible when collapsed */}
+            {chatState === "minimized" && (
+              <div
+                className="absolute inset-0 flex items-center justify-center border-l cursor-pointer hover:bg-accent/50 transition-colors z-10"
+                onClick={cycleChat}
+                title="Show chat"
+              >
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+            {/* Chat panel — always mounted so state (messages, streaming) is preserved */}
+            <div className={`flex h-full flex-col border-l${chatState === "minimized" ? " hidden" : ""}`}>
               <div className="flex items-center justify-end border-b px-2 py-1">
                 <Button
                   variant="ghost"
@@ -126,7 +129,7 @@ export function AllotmentLayout({ sidebar, editor, chat }: AllotmentLayoutProps)
               </div>
               <div className="flex-1 overflow-hidden">{chat}</div>
             </div>
-          )}
+          </div>
         </Allotment.Pane>
 
       </Allotment>

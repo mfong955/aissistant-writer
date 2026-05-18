@@ -294,9 +294,6 @@ export function syncEntityReferences(
   const updated: string[] = [];
 
   for (const row of rows) {
-    // Skip the entity that was just renamed (already has new name)
-    if (row.id === renamedEntityId) continue;
-
     // Skip historical session log entries (immutable audit records)
     const props = JSON.parse(row.properties || "{}") as Record<string, unknown>;
     if (props._reserved === "session_log") continue;

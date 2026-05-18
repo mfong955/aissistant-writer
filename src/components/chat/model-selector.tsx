@@ -28,7 +28,8 @@ export function ModelSelector({ selectedModelId, onSelect, onNoApiKey }: ModelSe
         setModels(models);
         onNoApiKey?.(false);
         if (!selectedModelId && models.length > 0) {
-          // Prefer Claude Sonnet (best balance for writing), fall back to first available
+          // Restore previously selected model from localStorage, then preferred defaults
+          const savedId = typeof window !== "undefined" ? localStorage.getItem("aissistant:modelId") : null;
           const PREFERRED = [
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-sonnet-4-5",
@@ -36,6 +37,7 @@ export function ModelSelector({ selectedModelId, onSelect, onNoApiKey }: ModelSe
             "anthropic/claude-3-sonnet",
           ];
           const preferred =
+            (savedId ? models.find((m) => m.id === savedId) : undefined) ??
             PREFERRED.map((id) => models.find((m) => m.id === id)).find(Boolean) ??
             models.find((m) => m.id.includes("claude") && m.id.includes("sonnet")) ??
             models[0];
@@ -71,6 +73,7 @@ export function ModelSelector({ selectedModelId, onSelect, onNoApiKey }: ModelSe
       onChange={(e) => {
         const model = models.find((m) => m.id === e.target.value);
         if (model) {
+          localStorage.setItem("aissistant:modelId", model.id);
           onSelect(model.id, model.context_length);
         }
       }}

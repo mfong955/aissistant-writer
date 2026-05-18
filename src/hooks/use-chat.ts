@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export interface ImageAttachment {
   name: string;
@@ -44,6 +44,27 @@ interface UseChatOptions {
   onEntityChange?: () => void;
 }
 
+function loadPersistedMessages(projectId: string): ChatMessageUI[] {
+  if (typeof window === "undefined" || !projectId) return [];
+  try {
+    const raw = sessionStorage.getItem(`chat:${projectId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<Omit<ChatMessageUI, "timestamp"> & { timestamp: string }>;
+    return parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) }));
+  } catch {
+    return [];
+  }
+}
+
+function persistMessages(projectId: string, messages: ChatMessageUI[]) {
+  if (typeof window === "undefined" || !projectId) return;
+  try {
+    sessionStorage.setItem(`chat:${projectId}`, JSON.stringify(messages));
+  } catch {
+    // sessionStorage full — silently ignore
+  }
+}
+
 export function useChat({
   projectId,
   modelId,
@@ -51,13 +72,18 @@ export function useChat({
   contextLimit,
   onEntityChange,
 }: UseChatOptions) {
-  const [messages, setMessages] = useState<ChatMessageUI[]>([]);
+  const [messages, setMessages] = useState<ChatMessageUI[]>(() => loadPersistedMessages(projectId));
   const [isStreaming, setIsStreaming] = useState(false);
   const [totalPromptTokens, setTotalPromptTokens] = useState(0);
   const [totalCompletionTokens, setTotalCompletionTokens] = useState(0);
   const [totalCost, setTotalCost] = useState(0);
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Persist messages to sessionStorage so they survive project-switch navigation
+  useEffect(() => {
+    if (projectId) persistMessages(projectId, messages);
+  }, [projectId, messages]);
 
   const sendMessage = useCallback(
     async (userMessage: string, imageAttachments?: ImageAttachment[]) => {

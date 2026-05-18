@@ -102,26 +102,42 @@ export function ChatInput({
           ]);
         };
         reader.readAsText(file, "utf-8");
-      } else if (file.name.endsWith(".pdf") || file.type === "application/pdf") {
+      } else if (
+        file.name.endsWith(".pdf") || file.type === "application/pdf" ||
+        /\.(doc|docx|rtf)$/i.test(file.name) ||
+        file.type === "application/msword" ||
+        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        file.type === "application/rtf"
+      ) {
+        // Extract text server-side for PDF/DOC/DOCX/RTF
+        const id = crypto.randomUUID();
         setAttachments((prev) => [
           ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "file",
-            name: file.name,
-            content: `[PDF — copy and paste the relevant text from "${file.name}" into the message instead]`,
-          },
+          { id, type: "file", name: file.name, content: `[Extracting text from "${file.name}"…]` },
         ]);
-      } else if (/\.(doc|docx|rtf|odt)$/i.test(file.name)) {
-        setAttachments((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            type: "file",
-            name: file.name,
-            content: `[Word document — copy and paste the relevant text from "${file.name}" into the message instead]`,
-          },
-        ]);
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const dataUrl = ev.target?.result as string;
+          // dataUrl is "data:<mime>;base64,<data>"
+          const base64 = dataUrl.split(",")[1] ?? "";
+          try {
+            const res = await fetch("/api/extract-document", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ base64, mimeType: file.type, fileName: file.name }),
+            });
+            const data = await res.json() as { text?: string; error?: string };
+            const content = data.text?.trim()
+              ? `[${file.name}]\n${data.text.trim()}`
+              : `[Could not extract text from "${file.name}": ${data.error || "unknown error"}]`;
+            setAttachments((prev) => prev.map((a) => a.id === id ? { ...a, content } : a));
+          } catch {
+            setAttachments((prev) =>
+              prev.map((a) => a.id === id ? { ...a, content: `[Failed to extract "${file.name}"]` } : a)
+            );
+          }
+        };
+        reader.readAsDataURL(file);
       } else {
         setAttachments((prev) => [
           ...prev,

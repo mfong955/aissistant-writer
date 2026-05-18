@@ -20,9 +20,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "API key is required" }, { status: 400 });
   }
 
-  const encrypted = await encryptApiKey(apiKey);
-  dbUpsertUserSettings(userId, { openrouter_api_key_encrypted: encrypted });
-  return NextResponse.json({ success: true });
+  try {
+    const encrypted = await encryptApiKey(apiKey);
+    dbUpsertUserSettings(userId, { openrouter_api_key_encrypted: encrypted });
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to save API key";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function DELETE() {

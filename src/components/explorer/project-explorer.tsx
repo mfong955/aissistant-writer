@@ -20,6 +20,13 @@ interface PendingRename {
   entityType: string;
 }
 
+interface RelatedNameCandidate {
+  entityId: string;
+  currentName: string;
+  proposedName: string;
+  checked: boolean;
+}
+
 interface ProjectExplorerProps {
   onSelectEntity: (entityId: string) => void;
   selectedEntityId?: string;
@@ -33,6 +40,7 @@ export function ProjectExplorer({
   const [showCreate, setShowCreate] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [pendingRename, setPendingRename] = useState<PendingRename | null>(null);
+  const [relatedCandidates, setRelatedCandidates] = useState<RelatedNameCandidate[]>([]);
   const [syncState, setSyncState] = useState<"idle" | "syncing" | "done">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -76,15 +84,28 @@ export function ProjectExplorer({
   async function confirmRename() {
     if (!project || !pendingRename) return;
     const { entityId, newName, entityType } = pendingRename;
+    const capturedOldName = pendingRename.oldName;
     setPendingRename(null);
     setSyncState("syncing");
     setSyncMessage(null);
 
     try {
-      // Use renamedFrom from the server — authoritative old name, never stale
       const { renamedFrom } = await updateEntity(entityId, { project_id: project.id, name: newName });
-      const oldName = renamedFrom ?? pendingRename.oldName;
+      const oldName = renamedFrom ?? capturedOldName;
       await refreshEntities();
+
+      // Detect other entity names that contain oldName as a substring
+      const candidates: RelatedNameCandidate[] = entities
+        .filter((e) => e.id !== entityId && e.name.includes(oldName))
+        .map((e) => ({
+          entityId: e.id,
+          currentName: e.name,
+          proposedName: e.name.split(oldName).join(newName),
+          checked: true,
+        }));
+      if (candidates.length > 0) {
+        setRelatedCandidates(candidates);
+      }
 
       const res = await fetch(`/api/projects/${project.id}/sync-references`, {
         method: "POST",
@@ -92,6 +113,7 @@ export function ProjectExplorer({
         body: JSON.stringify({ renamedEntityId: entityId, oldName, newName, entityType }),
       });
       const data = await res.json() as { programmaticUpdates: string[]; aiSummary: string | null };
+      await refreshEntities();
 
       const parts: string[] = [];
       if (data.programmaticUpdates.length > 0) {
@@ -114,10 +136,33 @@ export function ProjectExplorer({
     }
   }
 
+  async function applyRelatedRenames() {
+    if (!project) return;
+    const selected = relatedCandidates.filter((c) => c.checked);
+    setRelatedCandidates([]);
+    for (const c of selected) {
+      await updateEntity(c.entityId, { project_id: project.id, name: c.proposedName });
+    }
+    if (selected.length > 0) {
+      await refreshEntities();
+      window.dispatchEvent(
+        new CustomEvent("aissistant:rename-synced", {
+          detail: { message: `Also renamed ${selected.length} related file(s): ${selected.map((c) => `"${c.currentName}" → "${c.proposedName}"`).join(", ")}` },
+        })
+      );
+    }
+  }
+
   async function handleDelete(entityId: string) {
     if (!project) return;
     if (!confirm("Delete this entity and all its children?")) return;
     await deleteEntity(entityId, project.id);
+    await refreshEntities();
+  }
+
+  async function handleMove(entityId: string, newParentId: string | null) {
+    if (!project) return;
+    await updateEntity(entityId, { project_id: project.id, parent_id: newParentId });
     await refreshEntities();
   }
 
@@ -199,10 +244,25 @@ export function ProjectExplorer({
               onRename={handleRename}
               onDelete={handleDelete}
               onCreateChild={handleCreateChild}
+              onMove={handleMove}
               selectedId={selectedEntityId}
             />
           ))
         )}
+        {/* Root-level drop zone — drag a file here to move it out of any folder */}
+        <div
+          className="mx-1 mt-1 rounded-sm border border-dashed border-transparent py-2 text-center text-[10px] text-transparent transition-colors hover:border-border hover:text-muted-foreground"
+          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/40", "text-muted-foreground"); }}
+          onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground"); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground");
+            const draggedId = e.dataTransfer.getData("text/plain");
+            if (draggedId) handleMove(draggedId, null);
+          }}
+        >
+          Drop here to move to root
+        </div>
       </div>
       {showCreate && (
         <CreateEntityDialog
@@ -226,15 +286,15 @@ export function ProjectExplorer({
         </div>
       )}
 
-      {/* Rename confirmation dialog — rendered in document.body via portal to escape Allotment's CSS transform stacking context */}
+      {/* Rename confirmation dialog */}
       {pendingRename && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-[400px] rounded-lg border bg-background p-5 shadow-xl">
             <h3 className="mb-1 text-sm font-semibold">Rename file?</h3>
             <p className="mb-1 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">"{pendingRename.oldName}"</span>
+              <span className="font-medium text-foreground">&quot;{pendingRename.oldName}&quot;</span>
               {" → "}
-              <span className="font-medium text-foreground">"{pendingRename.newName}"</span>
+              <span className="font-medium text-foreground">&quot;{pendingRename.newName}&quot;</span>
             </p>
             <p className="mb-4 text-xs text-muted-foreground">
               Exact references in all project files will be updated automatically.
@@ -246,6 +306,67 @@ export function ProjectExplorer({
               </Button>
               <Button size="sm" onClick={confirmRename}>
                 Rename &amp; Sync
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Related file names dialog — shown when other file names contain the old name */}
+      {relatedCandidates.length > 0 && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-[480px] rounded-lg border bg-background p-5 shadow-xl">
+            <h3 className="mb-1 text-sm font-semibold">Update related file names?</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              These file names contain the old name. Select which ones to rename.
+            </p>
+            <div className="mb-3 flex gap-2 text-xs">
+              <button
+                className="text-primary underline"
+                onClick={() => setRelatedCandidates((prev) => prev.map((c) => ({ ...c, checked: true })))}
+              >
+                Select all
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <button
+                className="text-primary underline"
+                onClick={() => setRelatedCandidates((prev) => prev.map((c) => ({ ...c, checked: false })))}
+              >
+                Deselect all
+              </button>
+            </div>
+            <div className="mb-4 max-h-48 space-y-2 overflow-y-auto">
+              {relatedCandidates.map((c) => (
+                <label key={c.entityId} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={c.checked}
+                    onChange={(e) =>
+                      setRelatedCandidates((prev) =>
+                        prev.map((x) => x.entityId === c.entityId ? { ...x, checked: e.target.checked } : x)
+                      )
+                    }
+                    className="h-3.5 w-3.5 shrink-0"
+                  />
+                  <span className="flex-1 min-w-0 text-xs">
+                    <span className="font-medium">{c.currentName}</span>
+                    <span className="text-muted-foreground"> → </span>
+                    <span className="font-medium text-primary">{c.proposedName}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setRelatedCandidates([])}>
+                Skip
+              </Button>
+              <Button
+                size="sm"
+                onClick={applyRelatedRenames}
+                disabled={relatedCandidates.every((c) => !c.checked)}
+              >
+                Rename Selected
               </Button>
             </div>
           </div>

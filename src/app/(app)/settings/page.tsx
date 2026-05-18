@@ -38,8 +38,12 @@ export default function SettingsPage() {
       setApiKey("");
       setMessage("API key saved successfully");
     } else {
-      const data = await res.json();
-      setMessage(`Error: ${data.error}`);
+      try {
+        const data = await res.json();
+        setMessage(`Error: ${data.error ?? "Unknown error"}`);
+      } catch {
+        setMessage(`Error: server returned ${res.status}`);
+      }
     }
     setSaving(false);
   }

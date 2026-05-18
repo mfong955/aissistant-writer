@@ -23,6 +23,7 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
     closeTab,
     switchTab,
     markModified,
+    updateTabName,
   } = useEditorTabs();
 
   // Open tab when entity is selected from explorer
@@ -33,6 +34,16 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
       openTab(entity);
     }
   }, [selectedEntityId, entities, openTab]);
+
+  // Keep tab names in sync with entity names (handles renames)
+  useEffect(() => {
+    for (const tab of tabs) {
+      const entity = entities.find((e) => e.id === tab.entityId);
+      if (entity && entity.name !== tab.name) {
+        updateTabName(entity.id, entity.name);
+      }
+    }
+  }, [entities, tabs, updateTabName]);
 
   // Notify parent when active tab changes
   useEffect(() => {

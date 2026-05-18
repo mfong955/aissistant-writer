@@ -14,6 +14,7 @@ interface TreeNodeProps {
   onRename: (entityId: string, newName: string) => void;
   onDelete: (entityId: string) => void;
   onCreateChild: (parentId: string) => void;
+  onMove: (entityId: string, newParentId: string | null) => void;
   selectedId?: string;
 }
 
@@ -24,11 +25,13 @@ export function TreeNode({
   onRename,
   onDelete,
   onCreateChild,
+  onMove,
   selectedId,
 }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(node.entity.name);
+  const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isFolder = node.entity.type === "folder";
   const isSelected = node.entity.id === selectedId;
@@ -62,12 +65,45 @@ export function TreeNode({
     }
   }
 
+  function handleDragStart(e: React.DragEvent) {
+    e.stopPropagation();
+    e.dataTransfer.setData("text/plain", node.entity.id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!isFolder) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.stopPropagation();
+    setDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!isFolder) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (draggedId && draggedId !== node.entity.id) {
+      onMove(draggedId, node.entity.id);
+      setExpanded(true);
+    }
+  }
+
   return (
     <div>
       <div
+        draggable
         className={cn(
           "group flex items-center gap-1 rounded-sm px-1 py-0.5 text-sm hover:bg-accent",
-          isSelected && "bg-accent"
+          isSelected && "bg-accent",
+          dragOver && "bg-primary/10 ring-1 ring-primary/40"
         )}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
         onClick={() => {
@@ -75,6 +111,10 @@ export function TreeNode({
           onSelect(node.entity.id);
         }}
         onDoubleClick={handleDoubleClick}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {isFolder ? (
           <ChevronRight
@@ -156,6 +196,7 @@ export function TreeNode({
               onRename={onRename}
               onDelete={onDelete}
               onCreateChild={onCreateChild}
+              onMove={onMove}
               selectedId={selectedId}
             />
           ))}
