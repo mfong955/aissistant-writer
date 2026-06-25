@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, ImagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useProject } from "@/contexts/project-context";
@@ -43,6 +43,19 @@ export function ProjectExplorer({
   const [relatedCandidates, setRelatedCandidates] = useState<RelatedNameCandidate[]>([]);
   const [syncState, setSyncState] = useState<"idle" | "syncing" | "done">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFiles = useCallback(async (files: FileList | null) => {
+    if (!files || !project) return;
+    for (const file of Array.from(files)) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("project_id", project.id);
+      formData.append("name", file.name.replace(/\.[^.]+$/, ""));
+      await fetch("/api/images", { method: "POST", body: formData });
+    }
+    await refreshEntities();
+  }, [project, refreshEntities]);
 
   const progressEntity = useMemo(
     () => entities.find((e) => e.name === "Project Progress" && e.parent_id === null),
@@ -62,14 +75,14 @@ export function ProjectExplorer({
     [entities]
   );
 
-  async function handleCreate(name: string, type: EntityType, parentId?: string | null) {
+  async function handleCreate(
+    name: string,
+    type: EntityType,
+    parentId?: string | null,
+    content?: Record<string, unknown> | null
+  ) {
     if (!project) return;
-    await createEntity({
-      projectId: project.id,
-      name,
-      type,
-      parentId,
-    });
+    await createEntity({ projectId: project.id, name, type, parentId, content });
     await refreshEntities();
     setShowCreate(false);
   }
@@ -166,6 +179,33 @@ export function ProjectExplorer({
     await refreshEntities();
   }
 
+  async function handleReorder(draggedId: string, targetId: string, position: "before" | "after") {
+    if (!project) return;
+    const target = entities.find((e) => e.id === targetId);
+    if (!target) return;
+
+    // Get all siblings (same parent as target), sorted by current sort_order
+    const siblings = entities
+      .filter((e) => e.parent_id === target.parent_id && e.id !== draggedId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    // Insert dragged item at the correct position
+    const insertIdx = siblings.findIndex((e) => e.id === targetId) + (position === "after" ? 1 : 0);
+    siblings.splice(insertIdx, 0, entities.find((e) => e.id === draggedId)!);
+
+    // Assign new sort_orders (multiples of 100 to leave space)
+    await Promise.all(
+      siblings.map((e, i) =>
+        updateEntity(e.id, {
+          project_id: project.id,
+          sort_order: i * 100,
+          parent_id: target.parent_id,
+        })
+      )
+    );
+    await refreshEntities();
+  }
+
   function handleCreateChild(parentId: string) {
     setCreateParentId(parentId);
     setShowCreate(true);
@@ -182,16 +222,35 @@ export function ProjectExplorer({
         <span className="text-xs font-medium uppercase text-muted-foreground">
           Explorer
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={handleCreateRoot}
-          title="New entity"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => imageInputRef.current?.click()}
+            title="Upload image"
+          >
+            <ImagePlus className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleCreateRoot}
+            title="New entity"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
+      <input
+        ref={imageInputRef}
+        type="file"
+        className="hidden"
+        multiple
+        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/avif"
+        onChange={(e) => { handleImageFiles(e.target.files); e.target.value = ""; }}
+      />
       <div className="flex-1 overflow-auto py-1">
         {/* Project Progress — pinned first */}
         {progressEntity && (
@@ -245,6 +304,7 @@ export function ProjectExplorer({
               onDelete={handleDelete}
               onCreateChild={handleCreateChild}
               onMove={handleMove}
+              onReorder={handleReorder}
               selectedId={selectedEntityId}
             />
           ))

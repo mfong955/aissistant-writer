@@ -18,6 +18,7 @@ export interface ChatMessageUI {
   completionTokens?: number;
   cost?: number;
   timestamp: Date;
+  outOfCredits?: boolean;
 }
 
 export interface ToolCallUI {
@@ -143,7 +144,17 @@ export function useChat({
         });
 
         if (!response.ok) {
-          const error = await response.json();
+          const error = await response.json() as { error?: string; message?: string };
+          if (response.status === 402 && error.error === "insufficient_credits") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: error.message ?? "Out of AI credits.", outOfCredits: true }
+                  : m
+              )
+            );
+            return;
+          }
           throw new Error(error.error || "Chat request failed");
         }
 

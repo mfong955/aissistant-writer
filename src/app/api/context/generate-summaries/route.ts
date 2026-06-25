@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
-import { getDb } from "@/lib/db/database";
+import { getUserId } from "@/lib/get-user-id";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { dbUpsertEntitySummary } from "@/lib/db/entity-summaries";
 import { dbUpsertProjectState } from "@/lib/db/project-states";
 import {
@@ -8,9 +8,12 @@ import {
   generateProjectState,
 } from "@/lib/context/summary-generator";
 import { computeContentHash } from "@/lib/content-hash";
+import { extractTextFromTiptap } from "@/lib/tiptap-utils";
 
 export async function POST(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const body = await request.json();
   const { project_id, entity_id } = body as {
     project_id: string;
@@ -21,11 +24,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const db = getDb();
+  const supabase = getAdminClient();
 
-  const project = db
-    .prepare("SELECT name FROM projects WHERE id = ?")
-    .get(project_id) as { name: string } | undefined;
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name")
+    .eq("id", project_id)
+    .single();
 
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -34,26 +39,31 @@ export async function POST(request: Request) {
   let entitiesToProcess: Record<string, unknown>[];
 
   if (entity_id) {
-    const row = db
-      .prepare("SELECT * FROM entities WHERE id = ? AND project_id = ?")
-      .get(entity_id, project_id) as Record<string, unknown> | undefined;
-    entitiesToProcess = row ? [row] : [];
+    const { data: row } = await supabase
+      .from("entities")
+      .select("*")
+      .eq("id", entity_id)
+      .eq("project_id", project_id)
+      .single();
+    entitiesToProcess = row ? [row as Record<string, unknown>] : [];
   } else {
-    const entities = db
-      .prepare("SELECT * FROM entities WHERE project_id = ? AND type != 'folder'")
-      .all(project_id) as Record<string, unknown>[];
+    const [{ data: entities }, { data: summaries }] = await Promise.all([
+      supabase.from("entities").select("*").eq("project_id", project_id).neq("type", "folder"),
+      supabase
+        .from("entity_summaries")
+        .select("entity_id, version_hash")
+        .eq("project_id", project_id),
+    ]);
 
-    const summaries = db
-      .prepare("SELECT entity_id, version_hash FROM entity_summaries WHERE project_id = ?")
-      .all(project_id) as { entity_id: string; version_hash: string | null }[];
+    const summaryMap = new Map(
+      (summaries ?? []).map((s) => [(s as { entity_id: string; version_hash: string | null }).entity_id, (s as { entity_id: string; version_hash: string | null }).version_hash])
+    );
 
-    const summaryMap = new Map(summaries.map((s) => [s.entity_id, s.version_hash]));
-
-    entitiesToProcess = entities.filter((entity) => {
-      const currentHash = entity.version_hash as string | null;
-      const summaryHash = summaryMap.get(entity.id as string);
-      return currentHash !== summaryHash || !summaryHash;
-    });
+    entitiesToProcess = (entities ?? []).filter((entity) => {
+      const e = entity as { id: string; version_hash: string | null };
+      const summaryHash = summaryMap.get(e.id);
+      return e.version_hash !== summaryHash || !summaryHash;
+    }) as Record<string, unknown>[];
   }
 
   const results: Array<{ entityId: string; name: string; status: string }> = [];
@@ -61,7 +71,7 @@ export async function POST(request: Request) {
   for (const entity of entitiesToProcess) {
     try {
       const contentText = entity.content
-        ? extractTextFromContent(JSON.parse(entity.content as string) as Record<string, unknown>)
+        ? extractTextFromTiptap(entity.content as Record<string, unknown>)
         : "";
 
       if (!contentText.trim()) {
@@ -78,11 +88,9 @@ export async function POST(request: Request) {
         content: contentText,
       });
 
-      const contentHash = await computeContentHash(
-        JSON.parse(entity.content as string) as Record<string, unknown>
-      );
+      const contentHash = await computeContentHash(entity.content as Record<string, unknown>);
 
-      dbUpsertEntitySummary({
+      await dbUpsertEntitySummary({
         entityId: entity.id as string,
         projectId: project_id,
         userId,
@@ -105,21 +113,21 @@ export async function POST(request: Request) {
 
   if (generatedCount > 0 || !entity_id) {
     try {
-      const allSummaries = db
-        .prepare("SELECT entity_id, summary FROM entity_summaries WHERE project_id = ?")
-        .all(project_id) as { entity_id: string; summary: string }[];
+      const [{ data: allSummaries }, { data: allEntities }] = await Promise.all([
+        supabase.from("entity_summaries").select("entity_id, summary").eq("project_id", project_id),
+        supabase.from("entities").select("id, name, type").eq("project_id", project_id).neq("type", "folder"),
+      ]);
 
-      const allEntities = db
-        .prepare("SELECT id, name, type FROM entities WHERE project_id = ? AND type != 'folder'")
-        .all(project_id) as { id: string; name: string; type: string }[];
+      const entityMap = new Map(
+        (allEntities ?? []).map((e) => [(e as { id: string; name: string; type: string }).id, e as { id: string; name: string; type: string }])
+      );
 
-      const entityMap = new Map(allEntities.map((e) => [e.id, e]));
-
-      const entitySummaries = allSummaries
+      const entitySummaries = (allSummaries ?? [])
         .map((s) => {
-          const entity = entityMap.get(s.entity_id);
+          const sum = s as { entity_id: string; summary: string };
+          const entity = entityMap.get(sum.entity_id);
           if (!entity) return null;
-          return { name: entity.name, type: entity.type, summary: s.summary };
+          return { name: entity.name, type: entity.type, summary: sum.summary };
         })
         .filter(Boolean) as Array<{ name: string; type: string; summary: string }>;
 
@@ -127,16 +135,16 @@ export async function POST(request: Request) {
         const stateContent = await generateProjectState({
           projectId: project_id,
           userId,
-          projectName: project.name,
+          projectName: project.name as string,
           entitySummaries,
         });
 
         const entityHashes: Record<string, string> = {};
-        for (const s of allSummaries) {
-          entityHashes[s.entity_id] = "summarized";
+        for (const s of allSummaries ?? []) {
+          entityHashes[((s as { entity_id: string }).entity_id)] = "summarized";
         }
 
-        dbUpsertProjectState({
+        await dbUpsertProjectState({
           projectId: project_id,
           userId,
           stateContent,
@@ -156,25 +164,4 @@ export async function POST(request: Request) {
     totalProcessed: entitiesToProcess.length,
     generated: generatedCount,
   });
-}
-
-function extractTextFromContent(content: Record<string, unknown>): string {
-  const parts: string[] = [];
-
-  function walk(node: Record<string, unknown>) {
-    if (node.text && typeof node.text === "string") {
-      parts.push(node.text);
-    }
-    if (Array.isArray(node.content)) {
-      for (const child of node.content) {
-        walk(child as Record<string, unknown>);
-      }
-      if (node.type === "paragraph" || node.type === "heading") {
-        parts.push("\n");
-      }
-    }
-  }
-
-  walk(content);
-  return parts.join("").trim();
 }

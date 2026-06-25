@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Trash2, Key } from "lucide-react";
+import { Trash2, Key, Loader2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useProject } from "@/contexts/project-context";
@@ -17,7 +17,7 @@ interface ChatPanelContentProps {
 }
 
 export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelContentProps) {
-  const { project } = useProject();
+  const { project, entities } = useProject();
   const [modelId, setModelId] = useState<string | null>(null);
   const [contextLimit, setContextLimit] = useState<number>(128000);
   const [noApiKey, setNoApiKey] = useState(false);
@@ -131,26 +131,14 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
                     Set Up AI Assistant
                   </CardTitle>
                   <CardDescription>
-                    Connect an AI model to start writing with your assistant.
+                    Choose how you&apos;d like to power your AI assistant.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    This app uses{" "}
-                    <a
-                      href="https://openrouter.ai"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline"
-                    >
-                      OpenRouter
-                    </a>{" "}
-                    to connect to AI models like GPT-4o, Claude, and Gemini.
-                    You need an API key to get started.
-                  </p>
-                  <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-                    <li>
-                      Create an account at{" "}
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-1 text-sm font-medium">Option A — Bring your own API key</p>
+                    <p className="text-xs text-muted-foreground">
+                      Free to use. Get an API key from{" "}
                       <a
                         href="https://openrouter.ai/settings/keys"
                         target="_blank"
@@ -158,11 +146,19 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
                         className="text-primary underline"
                       >
                         openrouter.ai
-                      </a>
-                    </li>
-                    <li>Generate an API key in your dashboard</li>
-                    <li>Paste it in Settings</li>
-                  </ol>
+                      </a>{" "}
+                      and paste it in Settings. You pay OpenRouter directly at cost.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                      <Zap className="h-3.5 w-3.5 text-primary" />
+                      Option B &mdash; Buy AI credits
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      No API key needed. Buy a credit pack (from $5) and start chatting immediately.
+                    </p>
+                  </div>
                   <Button asChild className="w-full">
                     <Link href="/settings">Go to Settings</Link>
                   </Button>
@@ -179,20 +175,20 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
-            {isStreaming &&
-              messages.length > 0 &&
-              messages[messages.length - 1].role === "assistant" &&
-              !messages[messages.length - 1].content &&
-              !messages[messages.length - 1].toolCalls?.length && (
-                <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-                  <span className="flex gap-1">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "300ms" }} />
+            {isStreaming && (() => {
+              const last = messages[messages.length - 1];
+              const isThinking = last?.role === "assistant" && !last.content && !last.toolCalls?.length;
+              const hasToolInFlight = last?.role === "assistant" && last.toolCalls?.some((tc) => tc.success === undefined);
+              const isGenerating = last?.role === "assistant" && (last.content || last.toolCalls?.length);
+              return (
+                <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground border-t bg-muted/20">
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  <span>
+                    {isThinking ? "Thinking…" : hasToolInFlight ? "Running tools…" : isGenerating ? "Generating…" : "Working…"}
                   </span>
-                  <span>Thinking…</span>
                 </div>
-              )}
+              );
+            })()}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -233,6 +229,7 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
           onStop={stopStreaming}
           isStreaming={isStreaming}
           disabled={!modelId}
+          entities={entities.filter((e) => e.type !== "folder" && e.type !== "image")}
         />
       </div>
     </div>

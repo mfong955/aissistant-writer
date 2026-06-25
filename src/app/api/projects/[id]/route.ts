@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
 import { dbGetProject, dbUpdateProject, dbDeleteProject } from "@/lib/db/projects";
 import { initProjectFolders } from "@/lib/db/entities";
 
@@ -8,8 +8,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const userId = getLocalUserId();
-  const project = dbGetProject(id, userId);
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const project = await dbGetProject(id, userIdOrError);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ project });
 }
@@ -19,12 +20,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const updates = await request.json();
-  const project = dbUpdateProject(id, userId, updates);
+  const project = await dbUpdateProject(id, userId, updates);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (updates.project_type) {
-    initProjectFolders(id, userId, project.project_type);
+    await initProjectFolders(id, userId, project.project_type);
   }
   return NextResponse.json({ project });
 }
@@ -34,7 +37,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const userId = getLocalUserId();
-  dbDeleteProject(id, userId);
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  await dbDeleteProject(id, userIdOrError);
   return NextResponse.json({ ok: true });
 }

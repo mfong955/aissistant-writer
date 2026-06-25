@@ -5,7 +5,8 @@ export type EntityType =
   | "outline"
   | "note"
   | "world_building"
-  | "custom";
+  | "custom"
+  | "image";
 
 export type ChangeAction = "create" | "update" | "delete" | "rename" | "move";
 export type ChangeActor = "user" | "ai";

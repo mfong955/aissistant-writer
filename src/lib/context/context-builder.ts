@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db/database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { scoreEntities } from "./relevance-scorer";
 import { estimateTokens } from "./token-estimator";
 import { buildSystemPrompt } from "./system-prompt-template";
@@ -20,67 +20,49 @@ export async function buildContext(params: {
   activeEntityIds: string[];
   contextLimit: number;
 }): Promise<ContextBuildResult> {
-  const db = getDb();
+  const supabase = getAdminClient();
   const { projectId, userMessage, activeEntityIds, contextLimit } = params;
 
-  const project = db
-    .prepare("SELECT name, project_type, system_instructions FROM projects WHERE id = ?")
-    .get(projectId) as { name: string; project_type: string | null; system_instructions: string | null } | undefined;
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name, project_type, system_instructions")
+    .eq("id", projectId)
+    .single() as unknown as { data: { name: string; project_type: string | null; system_instructions: string | null } | null; error: null };
+
   const projectName = project?.name || "Untitled Project";
 
-  // Instructions entity takes precedence over project.system_instructions
-  const instructionsRow = db
-    .prepare("SELECT content FROM entities WHERE project_id = ? AND name = 'AI Instructions' AND parent_id IS NULL")
-    .get(projectId) as { content: string | null } | undefined;
+  const { data: instructionsRow } = await supabase
+    .from("entities")
+    .select("content")
+    .eq("project_id", projectId)
+    .eq("name", "AI Instructions")
+    .is("parent_id", null)
+    .single() as unknown as { data: { content: Record<string, unknown> | null } | null; error: null };
+
   const resolvedInstructions = instructionsRow?.content
-    ? extractTextFromTiptap(JSON.parse(instructionsRow.content))
+    ? extractTextFromTiptap(instructionsRow.content as Record<string, unknown>)
     : (project?.system_instructions ?? null);
 
-  const progressRow = db
-    .prepare("SELECT id, content FROM entities WHERE project_id = ? AND name = 'Project Progress' AND parent_id IS NULL")
-    .get(projectId) as { id: string; content: string | null } | undefined;
+  const { data: progressRow } = await supabase
+    .from("entities")
+    .select("id, content")
+    .eq("project_id", projectId)
+    .eq("name", "Project Progress")
+    .is("parent_id", null)
+    .single() as unknown as { data: { id: string; content: Record<string, unknown> | null } | null; error: null };
+
   const progressContent = progressRow?.content
-    ? extractTextFromTiptap(JSON.parse(progressRow.content))
+    ? extractTextFromTiptap(progressRow.content as Record<string, unknown>)
     : null;
 
-  const entityRows = db
-    .prepare("SELECT * FROM entities WHERE project_id = ?")
-    .all(projectId) as Record<string, unknown>[];
+  const [{ data: entityRows }, { data: summaryRows }, { data: projectStateRow }] = await Promise.all([
+    supabase.from("entities").select("*").eq("project_id", projectId),
+    supabase.from("entity_summaries").select("*").eq("project_id", projectId),
+    supabase.from("project_states").select("state_content").eq("project_id", projectId).single(),
+  ]);
 
-  const summaryRows = db
-    .prepare("SELECT * FROM entity_summaries WHERE project_id = ?")
-    .all(projectId) as Record<string, unknown>[];
-
-  const projectStateRow = db
-    .prepare("SELECT state_content FROM project_states WHERE project_id = ?")
-    .get(projectId) as { state_content: string } | undefined;
-
-  // Deserialize JSON fields
-  const allEntities: Entity[] = entityRows.map((row) => ({
-    id: row.id as string,
-    project_id: row.project_id as string,
-    user_id: row.user_id as string,
-    parent_id: (row.parent_id as string | null) ?? null,
-    type: row.type as Entity["type"],
-    name: row.name as string,
-    content: row.content ? (JSON.parse(row.content as string) as Record<string, unknown>) : null,
-    properties: JSON.parse((row.properties as string) || "{}") as Record<string, unknown>,
-    sort_order: row.sort_order as number,
-    version_hash: (row.version_hash as string | null) ?? null,
-    created_at: row.created_at as string,
-    updated_at: row.updated_at as string,
-  }));
-
-  const allSummaries: EntitySummary[] = summaryRows.map((row) => ({
-    id: row.id as string,
-    entity_id: row.entity_id as string,
-    project_id: row.project_id as string,
-    user_id: row.user_id as string,
-    summary: row.summary as string,
-    version_hash: (row.version_hash as string | null) ?? null,
-    created_at: row.created_at as string,
-    updated_at: row.updated_at as string,
-  }));
+  const allEntities: Entity[] = (entityRows ?? []) as Entity[];
+  const allSummaries: EntitySummary[] = (summaryRows ?? []) as EntitySummary[];
 
   const basePromptTokens = 500;
   const safetyMargin = Math.floor(contextLimit * 0.1);
@@ -112,10 +94,11 @@ export async function buildContext(params: {
   }
 
   let projectStateContent: string | undefined;
-  if (projectStateRow?.state_content) {
-    const stateTokens = estimateTokens(projectStateRow.state_content);
+  const stateContent = projectStateRow?.state_content as string | undefined;
+  if (stateContent) {
+    const stateTokens = estimateTokens(stateContent);
     if (stateTokens < remainingBudget) {
-      projectStateContent = projectStateRow.state_content;
+      projectStateContent = stateContent;
       remainingBudget -= stateTokens;
     }
   }

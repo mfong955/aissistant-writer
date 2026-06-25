@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db/database";
+import { getAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -9,33 +9,41 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const db = getDb();
+  const supabase = getAdminClient();
 
-  const entities = db
-    .prepare("SELECT id, name, version_hash FROM entities WHERE project_id = ? AND type != 'folder'")
-    .all(projectId) as { id: string; name: string; version_hash: string | null }[];
+  const [{ data: entities }, { data: summaries }] = await Promise.all([
+    supabase
+      .from("entities")
+      .select("id, name, version_hash")
+      .eq("project_id", projectId)
+      .neq("type", "folder"),
+    supabase
+      .from("entity_summaries")
+      .select("entity_id, version_hash")
+      .eq("project_id", projectId),
+  ]);
 
-  const summaries = db
-    .prepare("SELECT entity_id, version_hash FROM entity_summaries WHERE project_id = ?")
-    .all(projectId) as { entity_id: string; version_hash: string | null }[];
-
-  const summaryMap = new Map(summaries.map((s) => [s.entity_id, s.version_hash]));
-
-  const staleSummaries = entities
-    .filter((entity) => {
-      const summaryHash = summaryMap.get(entity.id);
-      if (!summaryHash) return true;
-      return entity.version_hash !== summaryHash;
+  const summaryMap = new Map(
+    (summaries ?? []).map((s) => {
+      const row = s as { entity_id: string; version_hash: string | null };
+      return [row.entity_id, row.version_hash];
     })
-    .map((entity) => ({
-      entityId: entity.id,
-      entityName: entity.name,
-      reason: summaryMap.has(entity.id) ? "outdated" : "missing",
-    }));
+  );
+
+  type EntityRow = { id: string; name: string; version_hash: string | null };
+  const staleSummaries = ((entities ?? []) as EntityRow[]).filter((entity) => {
+    const summaryHash = summaryMap.get(entity.id);
+    if (!summaryHash) return true;
+    return entity.version_hash !== summaryHash;
+  }).map((entity) => ({
+    entityId: entity.id,
+    entityName: entity.name,
+    reason: summaryMap.has(entity.id) ? "outdated" : "missing",
+  }));
 
   return NextResponse.json({
     staleSummaries,
-    totalEntities: entities.length,
-    totalSummaries: summaries.length,
+    totalEntities: (entities ?? []).length,
+    totalSummaries: (summaries ?? []).length,
   });
 }

@@ -11,6 +11,7 @@ import {
   History,
   ScrollText,
   ListChecks,
+  ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EntityType } from "@/types/database";
@@ -23,6 +24,7 @@ const iconMap: Record<EntityType, React.ComponentType<{ className?: string }>> =
   world_building: Globe,
   custom: File,
   folder: Folder,
+  image: ImageIcon,
 };
 
 const colorMap: Record<EntityType, string> = {
@@ -33,6 +35,7 @@ const colorMap: Record<EntityType, string> = {
   world_building: "text-emerald-500",
   custom: "text-slate-400",
   folder: "text-orange-400",
+  image: "text-pink-500",
 };
 
 export function EntityIcon({

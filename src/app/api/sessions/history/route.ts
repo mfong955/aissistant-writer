@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
 import { dbGetSessionHistory } from "@/lib/db/sessions";
 
 export async function GET(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("project_id");
 
@@ -11,6 +13,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const sessions = dbGetSessionHistory(projectId, userId);
+  const sessions = await dbGetSessionHistory(projectId, userId);
   return NextResponse.json({ sessions });
 }

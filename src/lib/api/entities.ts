@@ -11,6 +11,7 @@ export async function createEntity(params: {
   name: string;
   type: EntityType;
   parentId?: string | null;
+  content?: Record<string, unknown> | null;
 }): Promise<Entity> {
   const res = await fetch("/api/entities", {
     method: "POST",
@@ -20,6 +21,7 @@ export async function createEntity(params: {
       name: params.name,
       type: params.type,
       parent_id: params.parentId ?? null,
+      content: params.content ?? null,
     }),
   });
   const data = (await res.json()) as { entity: Entity };

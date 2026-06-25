@@ -1,8 +1,8 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ProjectProvider } from "@/contexts/project-context";
 import { ProjectShell } from "./project-shell";
 import { dbGetProject } from "@/lib/db/projects";
-import { getLocalUserId } from "@/lib/local-user";
+import { createClient } from "@/lib/supabase/server";
 import { ensureInstructionsEntity, ensureLogsFolder, ensureProgressEntity } from "@/lib/db/entities";
 
 export default async function ProjectLayout({
@@ -12,17 +12,21 @@ export default async function ProjectLayout({
   children: React.ReactNode;
 }) {
   const { projectId } = await params;
-  const userId = getLocalUserId();
-  const project = dbGetProject(projectId, userId);
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const userId = user.id;
+  const project = await dbGetProject(projectId, userId);
 
   if (!project) {
     notFound();
   }
 
-  // Ensure every project has its AI Instructions file and Logs folder
-  ensureInstructionsEntity(projectId, userId, project.system_instructions);
-  ensureProgressEntity(projectId, userId);
-  ensureLogsFolder(projectId, userId);
+  await Promise.all([
+    ensureInstructionsEntity(projectId, userId, project.system_instructions),
+    ensureProgressEntity(projectId, userId),
+    ensureLogsFolder(projectId, userId),
+  ]);
 
   return (
     <ProjectProvider project={project}>

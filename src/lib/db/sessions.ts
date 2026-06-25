@@ -1,91 +1,86 @@
-import { getDb } from "./database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { Session } from "@/types/database";
 
-function now() {
-  return new Date().toISOString();
+export async function dbStartSession(projectId: string, userId: string): Promise<Session> {
+  const supabase = getAdminClient();
+  const now = new Date().toISOString();
+
+  await supabase
+    .from("sessions")
+    .update({ ended_at: now })
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .is("ended_at", null);
+
+  const { data, error } = await supabase
+    .from("sessions")
+    .insert({
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      user_id: userId,
+      started_at: now,
+      entities_viewed: [],
+      entities_edited: [],
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Session;
 }
 
-function rowToSession(row: Record<string, unknown>): Session {
-  return {
-    id: row.id as string,
-    project_id: row.project_id as string,
-    user_id: row.user_id as string,
-    started_at: row.started_at as string,
-    ended_at: (row.ended_at as string | null) ?? null,
-    duration_seconds: (row.duration_seconds as number | null) ?? null,
-    entities_viewed: JSON.parse((row.entities_viewed as string) || "[]") as string[],
-    entities_edited: JSON.parse((row.entities_edited as string) || "[]") as string[],
-    summary: (row.summary as string | null) ?? null,
-    created_at: row.created_at as string,
-  };
-}
-
-export function dbStartSession(projectId: string, userId: string): Session {
-  const db = getDb();
-  const ts = now();
-
-  // Close any open sessions first
-  db.prepare(
-    "UPDATE sessions SET ended_at = ? WHERE project_id = ? AND user_id = ? AND ended_at IS NULL"
-  ).run(ts, projectId, userId);
-
-  const id = crypto.randomUUID();
-  db.prepare(
-    `INSERT INTO sessions
-     (id, project_id, user_id, started_at, entities_viewed, entities_edited, created_at)
-     VALUES (?, ?, ?, ?, '[]', '[]', ?)`
-  ).run(id, projectId, userId, ts, ts);
-
-  return rowToSession(
-    db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Record<string, unknown>
-  );
-}
-
-export function dbEndSession(
+export async function dbEndSession(
   id: string,
   userId: string
-): { durationSeconds: number } | null {
-  const db = getDb();
-  const session = db
-    .prepare("SELECT started_at FROM sessions WHERE id = ? AND user_id = ?")
-    .get(id, userId) as { started_at: string } | undefined;
+): Promise<{ durationSeconds: number } | null> {
+  const supabase = getAdminClient();
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("started_at")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .single();
 
   if (!session) return null;
 
-  const endedAt = now();
+  const endedAt = new Date().toISOString();
   const durationSeconds = Math.round(
-    (new Date(endedAt).getTime() - new Date(session.started_at).getTime()) / 1000
+    (new Date(endedAt).getTime() - new Date(session.started_at as string).getTime()) / 1000
   );
 
-  db.prepare(
-    "UPDATE sessions SET ended_at = ?, duration_seconds = ? WHERE id = ? AND user_id = ?"
-  ).run(endedAt, durationSeconds, id, userId);
+  await supabase
+    .from("sessions")
+    .update({ ended_at: endedAt, duration_seconds: durationSeconds })
+    .eq("id", id)
+    .eq("user_id", userId);
 
   return { durationSeconds };
 }
 
-export function dbUpdateSessionActivity(
+export async function dbUpdateSessionActivity(
   id: string,
   userId: string,
   entitiesViewed: string[],
   entitiesEdited: string[]
-): void {
-  getDb()
-    .prepare(
-      "UPDATE sessions SET entities_viewed = ?, entities_edited = ? WHERE id = ? AND user_id = ?"
-    )
-    .run(JSON.stringify(entitiesViewed), JSON.stringify(entitiesEdited), id, userId);
+): Promise<void> {
+  await getAdminClient()
+    .from("sessions")
+    .update({ entities_viewed: entitiesViewed, entities_edited: entitiesEdited })
+    .eq("id", id)
+    .eq("user_id", userId);
 }
 
-export function dbGetSessionHistory(
+export async function dbGetSessionHistory(
   projectId: string,
   userId: string,
   limit = 20
-): Session[] {
-  const rows = getDb()
-    .prepare(
-      "SELECT * FROM sessions WHERE project_id = ? AND user_id = ? ORDER BY started_at DESC LIMIT ?"
-    )
-    .all(projectId, userId, limit) as Record<string, unknown>[];
-  return rows.map(rowToSession);
+): Promise<Session[]> {
+  const { data, error } = await getAdminClient()
+    .from("sessions")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as Session[];
 }

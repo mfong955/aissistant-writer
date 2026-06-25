@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Send, Square, Paperclip, Link, X, Image as ImageIcon } from "lucide-react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { Send, Square, Paperclip, Link, X, Image as ImageIcon, AtSign, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { tiptapToMarkdown } from "@/lib/tiptap-utils";
 import type { ImageAttachment } from "@/hooks/use-chat";
+import type { Entity } from "@/types/database";
 
 type Attachment =
   | { id: string; type: "file"; name: string; content: string }
   | { id: string; type: "image"; name: string; base64url: string; mimeType: string }
-  | { id: string; type: "link"; name: string; content: string };
+  | { id: string; type: "link"; name: string; content: string }
+  | { id: string; type: "entity"; name: string; content: string; entityId: string };
 
 const TEXT_EXTENSIONS = /\.(md|markdown|txt|csv|json|jsonl|yaml|yml|toml|py|js|ts|tsx|jsx|html|css|scss|xml|svg|sh|bash|zsh|env|ini|cfg|conf|log|rst|tex)$/i;
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|avif)$/i;
@@ -18,6 +23,7 @@ interface ChatInputProps {
   onStop: () => void;
   isStreaming: boolean;
   disabled?: boolean;
+  entities?: Entity[];
 }
 
 export function ChatInput({
@@ -25,23 +31,92 @@ export function ChatInput({
   onStop,
   isStreaming,
   disabled,
+  entities,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [showLinkInput, setShowLinkInput] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionFromText = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const mentionResults = useMemo(() => {
+    if (mentionQuery === null || !entities?.length) return [];
+    const q = mentionQuery.toLowerCase();
+    return entities
+      .filter((e) => e.type !== "folder" && (!q || e.name.toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [mentionQuery, entities]);
+
+  const addEntityToChat = useCallback((entity: Entity) => {
+    setAttachments((prev) => {
+      if (prev.some((a) => a.type === "entity" && a.entityId === entity.id)) return prev;
+      const content = entity.content ? tiptapToMarkdown(entity.content) : "(empty file)";
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), type: "entity" as const, name: entity.name, content, entityId: entity.id },
+      ];
+    });
+  }, []);
+
+  // Listen for right-click "Add to Chat" from the explorer
+  useEffect(() => {
+    function handler(e: CustomEvent<{ entity: Entity }>) {
+      addEntityToChat(e.detail.entity);
+    }
+    window.addEventListener("aissistant:add-to-chat", handler as EventListener);
+    return () => window.removeEventListener("aissistant:add-to-chat", handler as EventListener);
+  }, [addEntityToChat]);
+
+  function selectMention(entity: Entity) {
+    if (mentionFromText.current && textareaRef.current) {
+      const cursor = textareaRef.current.selectionStart || 0;
+      const before = input.slice(0, cursor);
+      const after = input.slice(cursor);
+      const atIdx = before.search(/@\w*$/);
+      if (atIdx >= 0) setInput(before.slice(0, atIdx) + after);
+    }
+    addEntityToChat(entity);
+    setMentionQuery(null);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function handleAtButtonClick() {
+    if (!textareaRef.current) return;
+    const ta = textareaRef.current;
+    const start = ta.selectionStart ?? input.length;
+    const before = input.slice(0, start);
+    const after = input.slice(start);
+    const prevChar = before.length > 0 ? before[before.length - 1] : null;
+    const prefix = prevChar && prevChar !== " " && prevChar !== "\n" ? " " : "";
+    setInput(before + prefix + "@" + after);
+    mentionFromText.current = true;
+    setMentionQuery("");
+    setMentionIndex(0);
+    const newCursor = start + prefix.length + 1;
+    requestAnimationFrame(() => {
+      ta.setSelectionRange(newCursor, newCursor);
+      ta.focus();
+    });
+  }
 
   function buildTextMessage(text: string): string {
     if (!attachments.length) return text;
     const parts = [text.trim()];
-    const fileAttachments = attachments.filter((a): a is Extract<Attachment, { type: "file" }> => a.type === "file");
-    const linkAttachments = attachments.filter((a): a is Extract<Attachment, { type: "link" }> => a.type === "link");
-    if (fileAttachments.length) {
+    const fileAndEntityAttachments = attachments.filter(
+      (a): a is Extract<Attachment, { type: "file" }> | Extract<Attachment, { type: "entity" }> =>
+        a.type === "file" || a.type === "entity"
+    );
+    const linkAttachments = attachments.filter(
+      (a): a is Extract<Attachment, { type: "link" }> => a.type === "link"
+    );
+    if (fileAndEntityAttachments.length) {
       parts.push(
         `\n\n[Attached files]\n` +
-          fileAttachments.map((a) => `--- ${a.name} ---\n${a.content}`).join("\n\n")
+          fileAndEntityAttachments.map((a) => `--- ${a.name} ---\n${a.content}`).join("\n\n")
       );
     }
     if (linkAttachments.length) {
@@ -61,9 +136,51 @@ export function ChatInput({
     setAttachments([]);
     setShowLinkInput(false);
     setLinkInput("");
+    setMentionQuery(null);
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setInput(val);
+
+    const cursor = e.target.selectionStart ?? val.length;
+    const before = val.slice(0, cursor);
+    const match = /@(\w*)$/.exec(before);
+    if (match) {
+      const atIdx = match.index;
+      const charBefore = atIdx > 0 ? before[atIdx - 1] : null;
+      if (charBefore === null || charBefore === " " || charBefore === "\n") {
+        mentionFromText.current = true;
+        setMentionQuery(match[1]);
+        setMentionIndex(0);
+        return;
+      }
+    }
+    setMentionQuery(null);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (mentionQuery !== null && mentionResults.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => Math.min(i + 1, mentionResults.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (mentionResults[mentionIndex]) selectMention(mentionResults[mentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        setMentionQuery(null);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -81,7 +198,6 @@ export function ChatInput({
       const isImage = file.type.startsWith("image/") || IMAGE_EXTENSIONS.test(file.name);
 
       if (isImage) {
-        // Read image as base64 for vision API
         const reader = new FileReader();
         reader.onload = (ev) => {
           const base64url = ev.target?.result as string;
@@ -92,7 +208,6 @@ export function ChatInput({
         };
         reader.readAsDataURL(file);
       } else if (isText) {
-        // Read as UTF-8 text
         const reader = new FileReader();
         reader.onload = (ev) => {
           const content = ev.target?.result as string;
@@ -109,7 +224,6 @@ export function ChatInput({
         file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         file.type === "application/rtf"
       ) {
-        // Extract text server-side for PDF/DOC/DOCX/RTF
         const id = crypto.randomUUID();
         setAttachments((prev) => [
           ...prev,
@@ -118,7 +232,6 @@ export function ChatInput({
         const reader = new FileReader();
         reader.onload = async (ev) => {
           const dataUrl = ev.target?.result as string;
-          // dataUrl is "data:<mime>;base64,<data>"
           const base64 = dataUrl.split(",")[1] ?? "";
           try {
             const res = await fetch("/api/extract-document", {
@@ -165,7 +278,7 @@ export function ChatInput({
   }
 
   return (
-    <div className="h-full flex flex-col px-3 pt-2 pb-3 gap-2">
+    <div className="relative h-full flex flex-col px-3 pt-2 pb-3 gap-2">
       {/* Attachments */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 shrink-0">
@@ -176,6 +289,8 @@ export function ChatInput({
             >
               {att.type === "image" ? (
                 <ImageIcon className="h-3 w-3 shrink-0 text-blue-400" />
+              ) : att.type === "entity" ? (
+                <AtSign className="h-3 w-3 shrink-0 text-primary" />
               ) : att.type === "file" ? (
                 <Paperclip className="h-3 w-3 shrink-0" />
               ) : (
@@ -217,7 +332,7 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Textarea row — fills remaining space */}
+      {/* Textarea row */}
       <div className="flex flex-1 min-h-0 gap-2">
         <div className="flex shrink-0 flex-col justify-end gap-1 pb-0.5">
           <Button
@@ -235,6 +350,20 @@ export function ChatInput({
             type="button"
             size="icon"
             variant="ghost"
+            className={cn(
+              "h-7 w-7 text-muted-foreground",
+              mentionQuery !== null && "text-primary bg-primary/10"
+            )}
+            title="Mention a file (@)"
+            onClick={handleAtButtonClick}
+            disabled={disabled || isStreaming}
+          >
+            <AtSign className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
             className="h-7 w-7 text-muted-foreground"
             title="Attach link"
             onClick={() => setShowLinkInput((v) => !v)}
@@ -246,9 +375,13 @@ export function ChatInput({
         <textarea
           ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder={disabled ? "Configure API key in settings…" : "Type a message… (Shift+Enter for new line)"}
+          onBlur={() => {
+            // Delay closing so clicks on the popup register first
+            setTimeout(() => setMentionQuery(null), 150);
+          }}
+          placeholder={disabled ? "Configure API key in settings…" : "Type a message… (@ to mention a file, Shift+Enter for new line)"}
           disabled={disabled || isStreaming}
           className="flex-1 h-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         />
@@ -277,6 +410,74 @@ export function ChatInput({
         accept=".txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.sh,.log,.rst,.tex,.png,.jpg,.jpeg,.gif,.webp,.avif,.pdf,.doc,.docx,.rtf"
         onChange={handleFileChange}
       />
+
+      {/* @ mention popup */}
+      {mentionQuery !== null && mentionResults.length > 0 && textareaRef.current &&
+        createPortal(
+          (() => {
+            const rect = textareaRef.current!.getBoundingClientRect();
+            return (
+              <div
+                className="fixed z-50 overflow-hidden rounded-md border bg-popover shadow-md"
+                style={{
+                  left: rect.left,
+                  bottom: window.innerHeight - rect.top + 4,
+                  width: rect.width,
+                  maxHeight: "240px",
+                  overflowY: "auto",
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <div className="px-2 py-1 text-[10px] text-muted-foreground border-b">
+                  Project files — ↑↓ navigate, Enter/Tab to add
+                </div>
+                {mentionResults.map((entity, i) => (
+                  <button
+                    key={entity.id}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent",
+                      i === mentionIndex && "bg-accent"
+                    )}
+                    onMouseDown={(e) => { e.preventDefault(); selectMention(entity); }}
+                    onMouseEnter={() => setMentionIndex(i)}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{entity.name}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground capitalize shrink-0">
+                      {entity.type.replace("_", " ")}
+                    </span>
+                  </button>
+                ))}
+                {mentionQuery !== null && mentionResults.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No matching files</div>
+                )}
+              </div>
+            );
+          })(),
+          document.body
+        )
+      }
+
+      {/* Empty state for @ popup when no results */}
+      {mentionQuery !== null && mentionResults.length === 0 && entities?.length && textareaRef.current &&
+        createPortal(
+          (() => {
+            const rect = textareaRef.current!.getBoundingClientRect();
+            return (
+              <div
+                className="fixed z-50 overflow-hidden rounded-md border bg-popover shadow-md"
+                style={{ left: rect.left, bottom: window.innerHeight - rect.top + 4, width: rect.width }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  No matching files{mentionQuery ? ` for "${mentionQuery}"` : ""}
+                </div>
+              </div>
+            );
+          })(),
+          document.body
+        )
+      }
     </div>
   );
 }

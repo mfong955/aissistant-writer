@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
 import {
   dbCreateUploadedFile,
   dbGetUploadedFiles,
@@ -14,7 +14,9 @@ const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), ".data");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
 export async function POST(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const projectId = formData.get("project_id") as string | null;
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   fs.writeFileSync(fullPath, buffer);
 
-  const record = dbCreateUploadedFile({
+  const record = await dbCreateUploadedFile({
     projectId,
     userId,
     name: file.name,
@@ -54,7 +56,9 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("project_id");
 
@@ -62,19 +66,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const files = dbGetUploadedFiles(projectId, userId);
+  const files = await dbGetUploadedFiles(projectId, userId);
   return NextResponse.json({ files });
 }
 
 export async function DELETE(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const { file_id } = await request.json();
 
   if (!file_id) {
     return NextResponse.json({ error: "file_id is required" }, { status: 400 });
   }
 
-  const fileRecord = dbGetUploadedFile(file_id, userId);
+  const fileRecord = await dbGetUploadedFile(file_id, userId);
   if (!fileRecord) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
@@ -84,6 +90,6 @@ export async function DELETE(request: Request) {
     fs.unlinkSync(fullPath);
   }
 
-  dbDeleteUploadedFile(file_id, userId);
+  await dbDeleteUploadedFile(file_id, userId);
   return NextResponse.json({ ok: true });
 }

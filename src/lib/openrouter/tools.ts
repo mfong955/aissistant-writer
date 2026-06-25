@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "./types";
-import { getDb } from "@/lib/db/database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
 import { appendToSessionLog } from "@/lib/db/entities";
 import type { EntityType } from "@/types/database";
@@ -91,21 +91,24 @@ export async function executeToolCall(
   projectId: string,
   userId: string
 ): Promise<{ success: boolean; result: Record<string, unknown>; description: string }> {
-  const db = getDb();
+  const supabase = getAdminClient();
 
   switch (toolName) {
     case "read_entity": {
       const entityId = args.entity_id as string;
-      const entity = db
-        .prepare("SELECT id, name, type, content FROM entities WHERE id = ? AND project_id = ?")
-        .get(entityId, projectId) as { id: string; name: string; type: string; content: string | null } | undefined;
+      const { data: entity } = await supabase
+        .from("entities")
+        .select("id, name, type, content")
+        .eq("id", entityId)
+        .eq("project_id", projectId)
+        .single();
 
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to read entity ${entityId}` };
       }
 
       const contentText = entity.content
-        ? extractTextFromTiptap(JSON.parse(entity.content) as Record<string, unknown>)
+        ? extractTextFromTiptap(entity.content as Record<string, unknown>)
         : "(empty)";
 
       return {
@@ -118,40 +121,45 @@ export async function executeToolCall(
     case "create_entity": {
       const content = textToTiptapJson(args.content as string);
       const id = crypto.randomUUID();
-      const ts = new Date().toISOString();
+      const now = new Date().toISOString();
 
       try {
-        db.prepare(
-          `INSERT INTO entities (id, project_id, user_id, name, type, content, parent_id, sort_order, properties, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, '{}', ?, ?)`
-        ).run(
+        await supabase.from("entities").insert({
           id,
-          projectId,
-          userId,
-          args.name as string,
-          args.type as EntityType,
-          JSON.stringify(content),
-          (args.parent_id as string) || null,
-          ts,
-          ts
-        );
+          project_id: projectId,
+          user_id: userId,
+          name: args.name as string,
+          type: args.type as EntityType,
+          content,
+          parent_id: (args.parent_id as string) || null,
+          sort_order: 0,
+          properties: {},
+          created_at: now,
+          updated_at: now,
+        });
 
-        db.prepare(
-          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
-           VALUES (?, ?, ?, ?, 'create', 'ai', ?, ?)`
-        ).run(crypto.randomUUID(), projectId, userId, id, `Created ${args.type}: ${args.name}`, ts);
+        await supabase.from("change_logs").insert({
+          id: crypto.randomUUID(),
+          project_id: projectId,
+          user_id: userId,
+          entity_id: id,
+          action: "create",
+          actor: "ai",
+          description: `Created ${args.type as string}: ${args.name as string}`,
+          created_at: now,
+        });
 
-        appendToSessionLog(projectId, userId, `Created ${args.type}: ${args.name as string}`);
+        await appendToSessionLog(projectId, userId, `Created ${args.type as string}: ${args.name as string}`);
         return {
           success: true,
           result: { entity_id: id, name: args.name as string, type: args.type as string },
-          description: `Created ${args.type}: ${args.name}`,
+          description: `Created ${args.type as string}: ${args.name as string}`,
         };
       } catch (err) {
         return {
           success: false,
           result: { error: err instanceof Error ? err.message : "Unknown error" },
-          description: `Failed to create ${args.type}: ${args.name}`,
+          description: `Failed to create ${args.type as string}: ${args.name as string}`,
         };
       }
     }
@@ -159,11 +167,14 @@ export async function executeToolCall(
     case "update_entity": {
       const entityId = args.entity_id as string;
       const content = textToTiptapJson(args.content as string);
-      const ts = new Date().toISOString();
+      const now = new Date().toISOString();
 
-      const entity = db
-        .prepare("SELECT name, type FROM entities WHERE id = ? AND project_id = ?")
-        .get(entityId, projectId) as { name: string; type: string } | undefined;
+      const { data: entity } = await supabase
+        .from("entities")
+        .select("name, type")
+        .eq("id", entityId)
+        .eq("project_id", projectId)
+        .single();
 
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to update entity ${entityId}` };
@@ -172,19 +183,28 @@ export async function executeToolCall(
       const name = (args.name as string | undefined) || entity.name;
 
       try {
-        db.prepare("UPDATE entities SET content = ?, name = ?, updated_at = ? WHERE id = ? AND project_id = ?")
-          .run(JSON.stringify(content), name, ts, entityId, projectId);
+        await supabase
+          .from("entities")
+          .update({ content, name, updated_at: now })
+          .eq("id", entityId)
+          .eq("project_id", projectId);
 
-        db.prepare(
-          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
-           VALUES (?, ?, ?, ?, 'update', 'ai', ?, ?)`
-        ).run(crypto.randomUUID(), projectId, userId, entityId, `Updated ${entity.type}: ${name}`, ts);
+        await supabase.from("change_logs").insert({
+          id: crypto.randomUUID(),
+          project_id: projectId,
+          user_id: userId,
+          entity_id: entityId,
+          action: "update",
+          actor: "ai",
+          description: `Updated ${entity.type as string}: ${name}`,
+          created_at: now,
+        });
 
-        appendToSessionLog(projectId, userId, `Updated ${entity.type}: ${name}`);
+        await appendToSessionLog(projectId, userId, `Updated ${entity.type as string}: ${name}`);
         return {
           success: true,
           result: { entity_id: entityId, name, type: entity.type },
-          description: `Updated ${entity.type}: ${name}`,
+          description: `Updated ${entity.type as string}: ${name}`,
         };
       } catch (err) {
         return {
@@ -197,32 +217,37 @@ export async function executeToolCall(
 
     case "delete_entity": {
       const entityId = args.entity_id as string;
-
-      const entity = db
-        .prepare("SELECT name, type FROM entities WHERE id = ? AND project_id = ?")
-        .get(entityId, projectId) as { name: string; type: string } | undefined;
+      const { data: entity } = await supabase
+        .from("entities")
+        .select("name, type")
+        .eq("id", entityId)
+        .eq("project_id", projectId)
+        .single();
 
       try {
-        db.prepare("DELETE FROM entities WHERE id = ? AND project_id = ?").run(entityId, projectId);
+        await supabase
+          .from("entities")
+          .delete()
+          .eq("id", entityId)
+          .eq("project_id", projectId);
 
-        const ts = new Date().toISOString();
-        db.prepare(
-          `INSERT INTO change_logs (id, project_id, user_id, entity_id, action, actor, description, created_at)
-           VALUES (?, ?, ?, ?, 'delete', 'ai', ?, ?)`
-        ).run(
-          crypto.randomUUID(),
-          projectId,
-          userId,
-          entityId,
-          `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
-          ts
-        );
+        const now = new Date().toISOString();
+        await supabase.from("change_logs").insert({
+          id: crypto.randomUUID(),
+          project_id: projectId,
+          user_id: userId,
+          entity_id: entityId,
+          action: "delete",
+          actor: "ai",
+          description: `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`,
+          created_at: now,
+        });
 
-        appendToSessionLog(projectId, userId, `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`);
+        await appendToSessionLog(projectId, userId, `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`);
         return {
           success: true,
           result: { entity_id: entityId, deleted: true },
-          description: `Deleted ${entity?.type || "entity"}: ${entity?.name || entityId}`,
+          description: `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`,
         };
       } catch (err) {
         return {

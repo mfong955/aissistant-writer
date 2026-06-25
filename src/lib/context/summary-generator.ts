@@ -1,4 +1,3 @@
-import { getLocalUserId } from "@/lib/local-user";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { decryptApiKey } from "@/lib/encryption";
 
@@ -10,8 +9,7 @@ export async function generateEntitySummary(params: {
   entityType: string;
   content: string;
 }): Promise<string> {
-  const userId = getLocalUserId();
-  const settings = dbGetUserSettings(userId);
+  const settings = await dbGetUserSettings(params.userId);
 
   if (!settings?.openrouter_api_key_encrypted) {
     throw new Error("No API key configured");
@@ -59,8 +57,7 @@ export async function generateProjectState(params: {
   projectName: string;
   entitySummaries: Array<{ name: string; type: string; summary: string }>;
 }): Promise<string> {
-  const userId = getLocalUserId();
-  const settings = dbGetUserSettings(userId);
+  const settings = await dbGetUserSettings(params.userId);
 
   if (!settings?.openrouter_api_key_encrypted) {
     throw new Error("No API key configured");

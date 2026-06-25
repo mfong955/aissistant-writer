@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
 import { decryptApiKey } from "@/lib/encryption";
 import { listModels } from "@/lib/openrouter/client";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
@@ -8,20 +8,33 @@ const modelCache = new Map<string, { data: unknown; expires: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
 export async function GET() {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
 
   const cached = modelCache.get(userId);
   if (cached && cached.expires > Date.now()) {
     return NextResponse.json(cached.data);
   }
 
-  const settings = dbGetUserSettings(userId);
-  if (!settings?.openrouter_api_key_encrypted) {
-    return NextResponse.json({ error: "No API key configured" }, { status: 400 });
+  const settings = await dbGetUserSettings(userId);
+
+  let apiKey: string;
+  if (settings?.openrouter_api_key_encrypted) {
+    try {
+      apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
+    } catch {
+      return NextResponse.json({ error: "Failed to decrypt API key" }, { status: 500 });
+    }
+  } else {
+    const systemKey = process.env.OPENROUTER_SYSTEM_API_KEY;
+    if (!systemKey) {
+      return NextResponse.json({ error: "No API key configured" }, { status: 400 });
+    }
+    apiKey = systemKey;
   }
 
   try {
-    const apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
     const models = await listModels(apiKey);
 
     const chatModels = models

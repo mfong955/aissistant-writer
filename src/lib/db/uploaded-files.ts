@@ -1,25 +1,7 @@
-import { getDb } from "./database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { UploadedFile } from "@/types/database";
 
-function now() {
-  return new Date().toISOString();
-}
-
-function rowToFile(row: Record<string, unknown>): UploadedFile {
-  return {
-    id: row.id as string,
-    project_id: row.project_id as string,
-    user_id: row.user_id as string,
-    name: row.name as string,
-    mime_type: row.mime_type as string,
-    size_bytes: row.size_bytes as number,
-    storage_path: row.storage_path as string,
-    entity_id: (row.entity_id as string | null) ?? null,
-    created_at: row.created_at as string,
-  };
-}
-
-export function dbCreateUploadedFile(params: {
+export async function dbCreateUploadedFile(params: {
   projectId: string;
   userId: string;
   name: string;
@@ -27,50 +9,51 @@ export function dbCreateUploadedFile(params: {
   sizeBytes: number;
   storagePath: string;
   entityId?: string | null;
-}): UploadedFile {
-  const db = getDb();
-  const id = crypto.randomUUID();
-  const ts = now();
-
-  db.prepare(
-    `INSERT INTO uploaded_files
-     (id, project_id, user_id, name, mime_type, size_bytes, storage_path, entity_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    params.projectId,
-    params.userId,
-    params.name,
-    params.mimeType,
-    params.sizeBytes,
-    params.storagePath,
-    params.entityId ?? null,
-    ts
-  );
-
-  return rowToFile(
-    db.prepare("SELECT * FROM uploaded_files WHERE id = ?").get(id) as Record<string, unknown>
-  );
+}): Promise<UploadedFile> {
+  const { data, error } = await getAdminClient()
+    .from("uploaded_files")
+    .insert({
+      id: crypto.randomUUID(),
+      project_id: params.projectId,
+      user_id: params.userId,
+      name: params.name,
+      mime_type: params.mimeType,
+      size_bytes: params.sizeBytes,
+      storage_path: params.storagePath,
+      entity_id: params.entityId ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as UploadedFile;
 }
 
-export function dbGetUploadedFiles(projectId: string, userId: string): UploadedFile[] {
-  const rows = getDb()
-    .prepare(
-      "SELECT * FROM uploaded_files WHERE project_id = ? AND user_id = ? ORDER BY created_at DESC"
-    )
-    .all(projectId, userId) as Record<string, unknown>[];
-  return rows.map(rowToFile);
+export async function dbGetUploadedFiles(projectId: string, userId: string): Promise<UploadedFile[]> {
+  const { data, error } = await getAdminClient()
+    .from("uploaded_files")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as UploadedFile[];
 }
 
-export function dbGetUploadedFile(id: string, userId: string): UploadedFile | null {
-  const row = getDb()
-    .prepare("SELECT * FROM uploaded_files WHERE id = ? AND user_id = ?")
-    .get(id, userId) as Record<string, unknown> | undefined;
-  return row ? rowToFile(row) : null;
+export async function dbGetUploadedFile(id: string, userId: string): Promise<UploadedFile | null> {
+  const { data, error } = await getAdminClient()
+    .from("uploaded_files")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .single();
+  if (error) return null;
+  return data as UploadedFile;
 }
 
-export function dbDeleteUploadedFile(id: string, userId: string): void {
-  getDb()
-    .prepare("DELETE FROM uploaded_files WHERE id = ? AND user_id = ?")
-    .run(id, userId);
+export async function dbDeleteUploadedFile(id: string, userId: string): Promise<void> {
+  await getAdminClient()
+    .from("uploaded_files")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
 }

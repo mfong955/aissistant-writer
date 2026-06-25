@@ -2,11 +2,56 @@
   "name": "aissistant-writer",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "",
+    "electron:dev": "concurrently -k -n \"next,electron\" -c \"cyan,green\" \"next dev --turbopack\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "ELECTRON_BUILD=true next build && node electron/prepare-build.js && electron-builder",
+    "electron:pack": "ELECTRON_BUILD=true next build && node electron/prepare-build.js && electron-builder --dir"
+  },
+  "build": {
+    "productName": "Aissistant Writer",
+    "appId": "com.mwfong.aissistant-writer",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.0",
@@ -16,28 +61,34 @@
     "@tiptap/react": "^2.12.0",
     "@tiptap/starter-kit": "^2.12.0",
     "allotment": "^1.0.9",
-    "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "docx": "^9.6.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.474.0",
     "mammoth": "^1.12.0",
+    "marked": "^18.0.4",
     "next": "^15.3.0",
     "pdf-parse": "^2.4.5",
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "stripe": "^17.7.0",
     "tailwind-merge": "^3.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.0.0",
     "@tailwindcss/postcss": "^4.0.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "concurrently": "^9.2.1",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.3.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wait-on": "^9.0.10"
   }
 }

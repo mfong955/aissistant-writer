@@ -1,6 +1,7 @@
 "use client";
 
-import { User, Bot, Check, X, FileText, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap } from "lucide-react";
 import type { ChatMessageUI } from "@/hooks/use-chat";
 
 interface ChatMessageProps {
@@ -46,9 +47,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
             ))}
           </div>
         )}
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-          {message.content || (message.toolCalls?.length ? "" : "...")}
-        </div>
+        {message.outOfCredits ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
+            <p className="text-sm text-amber-800 dark:text-amber-200">{message.content}</p>
+            <Link
+              href="/settings"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+            >
+              <Zap className="h-3 w-3" />
+              Buy more credits
+            </Link>
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+            {message.content || (message.toolCalls?.length ? "" : "...")}
+          </div>
+        )}
 
         {/* Tool call results */}
         {message.toolCalls?.map((tc) => (
@@ -60,6 +74,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span className="flex-1 truncate">
               {tc.description || `${tc.name}(${JSON.stringify(tc.arguments)})`}
             </span>
+            {tc.success === undefined && (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+            )}
             {tc.success === true && (
               <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
             )}

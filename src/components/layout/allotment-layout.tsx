@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { Allotment, type AllotmentHandle } from "allotment";
 import {
   PanelLeftOpen,
@@ -30,6 +30,8 @@ export function AllotmentLayout({ sidebar, editor, chat }: AllotmentLayoutProps)
   const containerRef = useRef<HTMLDivElement>(null);
   const [sidebarState, setSidebarState] = useState<PanelState>("normal");
   const [chatState, setChatState] = useState<PanelState>("normal");
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const preFocusStates = useRef<{ sb: PanelState; ch: PanelState }>({ sb: "normal", ch: "normal" });
 
   function applyResize(sb: PanelState, ch: PanelState) {
     if (!allotmentRef.current || !containerRef.current) return;
@@ -55,6 +57,38 @@ export function AllotmentLayout({ sidebar, editor, chat }: AllotmentLayoutProps)
       return next;
     });
   }
+
+  function enterFocusMode() {
+    preFocusStates.current = { sb: sidebarState, ch: chatState };
+    setSidebarState("minimized");
+    setChatState("minimized");
+    setIsFocusMode(true);
+    applyResize("minimized", "minimized");
+  }
+
+  function exitFocusMode() {
+    const { sb, ch } = preFocusStates.current;
+    setSidebarState(sb);
+    setChatState(ch);
+    setIsFocusMode(false);
+    applyResize(sb, ch);
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && isFocusMode) exitFocusMode();
+    }
+    function onToggle() {
+      if (isFocusMode) exitFocusMode(); else enterFocusMode();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("aissistant:toggle-focus", onToggle);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("aissistant:toggle-focus", onToggle);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocusMode, sidebarState, chatState]);
 
   return (
     <div ref={containerRef} className="h-full">
@@ -94,7 +128,15 @@ export function AllotmentLayout({ sidebar, editor, chat }: AllotmentLayoutProps)
 
         {/* ── Editor ── */}
         <Allotment.Pane minSize={200}>
-          <div className="h-full overflow-hidden">{editor}</div>
+          <div className="h-full overflow-hidden">
+            {isFocusMode ? (
+              <div className="flex h-full justify-center overflow-auto bg-background">
+                <div className="w-full max-w-3xl">
+                  {editor}
+                </div>
+              </div>
+            ) : editor}
+          </div>
         </Allotment.Pane>
 
         {/* ── Chat ── */}

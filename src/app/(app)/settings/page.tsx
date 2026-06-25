@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, Key, Check, X } from "lucide-react";
+import { BillingCard } from "@/components/billing/billing-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+
 export default function SettingsPage() {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
@@ -83,6 +85,10 @@ export default function SettingsPage() {
         </Button>
         <h1 className="text-2xl font-bold">Settings</h1>
       </div>
+
+      <Suspense>
+        <BillingCard />
+      </Suspense>
 
       <Card>
         <CardHeader>

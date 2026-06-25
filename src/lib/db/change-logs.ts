@@ -1,29 +1,7 @@
-import { getDb } from "./database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { ChangeLog, ChangeAction, ChangeActor } from "@/types/database";
 
-function now() {
-  return new Date().toISOString();
-}
-
-function rowToChangeLog(row: Record<string, unknown>): ChangeLog {
-  return {
-    id: row.id as string,
-    project_id: row.project_id as string,
-    user_id: row.user_id as string,
-    entity_id: (row.entity_id as string | null) ?? null,
-    action: row.action as ChangeAction,
-    actor: row.actor as ChangeActor,
-    description: row.description as string,
-    old_version_hash: (row.old_version_hash as string | null) ?? null,
-    new_version_hash: (row.new_version_hash as string | null) ?? null,
-    metadata: row.metadata
-      ? (JSON.parse(row.metadata as string) as Record<string, unknown>)
-      : null,
-    created_at: row.created_at as string,
-  };
-}
-
-export function dbCreateChangeLog(params: {
+export async function dbCreateChangeLog(params: {
   projectId: string;
   userId: string;
   entityId?: string | null;
@@ -33,54 +11,46 @@ export function dbCreateChangeLog(params: {
   oldVersionHash?: string | null;
   newVersionHash?: string | null;
   metadata?: Record<string, unknown>;
-}): ChangeLog {
-  const db = getDb();
-  const id = crypto.randomUUID();
-  const ts = now();
-
-  db.prepare(
-    `INSERT INTO change_logs
-     (id, project_id, user_id, entity_id, action, actor, description,
-      old_version_hash, new_version_hash, metadata, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    params.projectId,
-    params.userId,
-    params.entityId ?? null,
-    params.action,
-    params.actor,
-    params.description,
-    params.oldVersionHash ?? null,
-    params.newVersionHash ?? null,
-    params.metadata ? JSON.stringify(params.metadata) : null,
-    ts
-  );
-
-  return rowToChangeLog(
-    db.prepare("SELECT * FROM change_logs WHERE id = ?").get(id) as Record<string, unknown>
-  );
+}): Promise<ChangeLog> {
+  const { data, error } = await getAdminClient()
+    .from("change_logs")
+    .insert({
+      id: crypto.randomUUID(),
+      project_id: params.projectId,
+      user_id: params.userId,
+      entity_id: params.entityId ?? null,
+      action: params.action,
+      actor: params.actor,
+      description: params.description,
+      old_version_hash: params.oldVersionHash ?? null,
+      new_version_hash: params.newVersionHash ?? null,
+      metadata: params.metadata ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ChangeLog;
 }
 
-export function dbGetChangeLogs(
+export async function dbGetChangeLogs(
   projectId: string,
   options?: { entityId?: string; limit?: number; offset?: number }
-): ChangeLog[] {
-  const db = getDb();
+): Promise<ChangeLog[]> {
   const limit = options?.limit ?? 50;
   const offset = options?.offset ?? 0;
 
-  let sql = "SELECT * FROM change_logs WHERE project_id = ?";
-  const args: unknown[] = [projectId];
+  let query = getAdminClient()
+    .from("change_logs")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (options?.entityId) {
-    sql += " AND entity_id = ?";
-    args.push(options.entityId);
+    query = query.eq("entity_id", options.entityId);
   }
 
-  sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-  args.push(limit, offset);
-
-  const rows = db.prepare(sql).all(...args) as Record<string, unknown>[];
-  return rows.map(rowToChangeLog);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ChangeLog[];
 }

@@ -1,13 +1,17 @@
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
+import { NextResponse } from "next/server";
 import { decryptApiKey } from "@/lib/encryption";
 import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
 import { entityTools, executeToolCall } from "@/lib/openrouter/tools";
 import { buildContext } from "@/lib/context/context-builder";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
+import { dbDeductCredit } from "@/lib/db/billing";
 import type { ChatCompletionMessage, StreamChunk, ToolCallResponse } from "@/lib/openrouter/types";
 
 export async function POST(request: Request) {
-  const userId = getLocalUserId();
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
 
   const body = await request.json();
   const { messages, model_id, project_id, active_entity_ids, context_limit } = body as {
@@ -25,16 +29,33 @@ export async function POST(request: Request) {
     );
   }
 
-  const settings = dbGetUserSettings(userId);
-  if (!settings?.openrouter_api_key_encrypted) {
-    return new Response(JSON.stringify({ error: "No API key configured" }), { status: 400 });
-  }
-
+  const settings = await dbGetUserSettings(userId);
   let apiKey: string;
-  try {
-    apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
-  } catch {
-    return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
+
+  if (settings?.openrouter_api_key_encrypted) {
+    // BYOK path: use user's own key, no credit deduction
+    try {
+      apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
+    } catch {
+      return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
+    }
+  } else {
+    // Credits path: deduct 1 credit and use the system key
+    const systemKey = process.env.OPENROUTER_SYSTEM_API_KEY;
+    if (!systemKey) {
+      return new Response(
+        JSON.stringify({ error: "No API key configured. Add your OpenRouter key in Settings." }),
+        { status: 400 }
+      );
+    }
+    const deducted = await dbDeductCredit(userId);
+    if (!deducted) {
+      return new Response(
+        JSON.stringify({ error: "insufficient_credits", message: "You're out of AI credits. Buy more in Settings." }),
+        { status: 402 }
+      );
+    }
+    apiKey = systemKey;
   }
 
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();

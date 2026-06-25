@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
-import { getLocalUserId } from "@/lib/local-user";
+import { getUserId } from "@/lib/get-user-id";
 import { decryptApiKey } from "@/lib/encryption";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { syncEntityReferences } from "@/lib/db/entities";
 import { chatCompletionJson } from "@/lib/openrouter/client";
 import { entityTools, executeToolCall } from "@/lib/openrouter/tools";
-import { getDb } from "@/lib/db/database";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { ChatCompletionMessage } from "@/lib/openrouter/types";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userIdOrError = await getUserId();
+  if (userIdOrError instanceof NextResponse) return userIdOrError;
+  const userId = userIdOrError;
   const { id: projectId } = await params;
-  const userId = getLocalUserId();
 
   const { renamedEntityId, oldName, newName, entityType } = await request.json() as {
     renamedEntityId: string;
@@ -26,12 +28,10 @@ export async function POST(
     return NextResponse.json({ error: "renamedEntityId, oldName, and newName are required" }, { status: 400 });
   }
 
-  // Step 1: Programmatic exact-text replacement
-  const programmaticUpdates = syncEntityReferences(projectId, userId, renamedEntityId, oldName, newName);
+  const programmaticUpdates = await syncEntityReferences(projectId, userId, renamedEntityId, oldName, newName);
 
-  // Step 2: AI semantic pass (only if a model + API key are configured)
   let aiSummary: string | null = null;
-  const settings = dbGetUserSettings(userId);
+  const settings = await dbGetUserSettings(userId);
 
   if (settings?.openrouter_api_key_encrypted && settings.preferred_model_id) {
     try {
@@ -48,7 +48,6 @@ export async function POST(
         programmaticUpdates,
       });
     } catch {
-      // AI pass is best-effort; don't fail the whole operation
       aiSummary = null;
     }
   }
@@ -69,14 +68,14 @@ async function runSemanticReferenceUpdate(params: {
 }): Promise<string> {
   const { apiKey, model, projectId, userId, renamedEntityId, oldName, newName, entityType, programmaticUpdates } = params;
 
-  // Build a lean entity index (IDs + names only — no content)
-  const db = getDb();
-  const entityRows = db
-    .prepare("SELECT id, name, type, parent_id FROM entities WHERE project_id = ?")
-    .all(projectId) as { id: string; name: string; type: string; parent_id: string | null }[];
+  const { data: entityRows } = await getAdminClient()
+    .from("entities")
+    .select("id, name, type, parent_id")
+    .eq("project_id", projectId);
 
-  const nameById = new Map(entityRows.map((e) => [e.id, e.name]));
-  const indexLines = entityRows
+  const rows = (entityRows ?? []) as { id: string; name: string; type: string; parent_id: string | null }[];
+  const nameById = new Map(rows.map((e) => [e.id, e.name]));
+  const indexLines = rows
     .filter((e) => e.id !== renamedEntityId)
     .map((e) => {
       const parentNote = e.parent_id ? `, in: ${nameById.get(e.parent_id) || "unknown"}` : "";
@@ -107,7 +106,6 @@ ${indexLines.join("\n")}`;
   let loopMessages = [...messages];
   let finalSummary = "No contextual references found.";
 
-  // Agentic loop — max 5 iterations to prevent runaway
   for (let i = 0; i < 5; i++) {
     const response = await chatCompletionJson({ apiKey, model, messages: loopMessages, tools: entityTools, maxTokens: 1024 });
 
@@ -116,7 +114,6 @@ ${indexLines.join("\n")}`;
       break;
     }
 
-    // Execute tool calls
     const toolResults: Array<{ toolCallId: string; result: Record<string, unknown> }> = [];
     for (const tc of response.toolCalls) {
       let args: Record<string, unknown>;

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { Folder, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PROJECT_TEMPLATES } from "@/lib/templates";
 import type { ProjectType } from "@/types/database";
 
 const PROJECT_TYPES: { value: ProjectType; label: string }[] = [
@@ -30,6 +32,8 @@ export function CreateProjectDialog({
   const [description, setDescription] = useState("");
   const [projectType, setProjectType] = useState<ProjectType | "">("");
   const [loading, setLoading] = useState(false);
+
+  const starterTemplate = projectType ? PROJECT_TEMPLATES[projectType as ProjectType] : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -79,21 +83,36 @@ export function CreateProjectDialog({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-muted-foreground">
-              Sets default folder structure for the AI assistant.
-            </p>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={loading}
-            >
+
+          {/* Template preview */}
+          {starterTemplate && (
+            <div className="rounded-lg border bg-muted/40 px-3 py-2.5">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Starter template</p>
+              <div className="space-y-1">
+                {starterTemplate.folders.map((folder) => (
+                  <div key={folder.name} className="flex items-center gap-1.5 text-xs">
+                    <Folder className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">{folder.name}</span>
+                    {folder.seeds.length > 0 && (
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <span>·</span>
+                        <FileText className="h-2.5 w-2.5" />
+                        {folder.seeds.map((s) => s.name).join(", ")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
               Cancel
             </Button>
             <Button type="submit" disabled={loading || !name.trim()}>
-              {loading ? "Creating..." : "Create"}
+              {loading ? "Creating..." : "Create Project"}
             </Button>
           </div>
         </form>

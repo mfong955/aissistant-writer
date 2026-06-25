@@ -25,6 +25,7 @@ __pycache__/
 
 # Build output
 dist/
+dist-electron/
 build/
 out/
 target/
@@ -52,3 +53,9 @@ htmlcov/
 
 # Local data (SQLite database, uploads, user identity)
 .data/
+
+# Claude Code auto-memory (internal tooling, not project files)
+memory/
+
+# TypeScript build info
+tsconfig.tsbuildinfo
