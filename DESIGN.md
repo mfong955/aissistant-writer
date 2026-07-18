@@ -2,7 +2,10 @@
 
 ## Color
 
-**Strategy**: Restrained — achromatic neutrals + one accent. Currently the palette has zero chroma; a brand accent color is the highest-priority visual improvement.
+**Strategy**: Restrained — brand accent on primary + tinted neutrals. Single hue family throughout.
+
+**Brand seed**: `oklch(0.550 0.091 210)` — steel-blue, hue 210°  
+**Scene**: Rare-books reading room at dusk — precise architectural lamp casting light on the manuscript, blue-shadowed shelves behind.
 
 **Light mode**
 
@@ -10,30 +13,30 @@
 |---|---|---|
 | Background | `--background` | `oklch(1 0 0)` — pure white |
 | Surface / Card | `--card` | `oklch(1 0 0)` |
-| Subtle surface | `--muted` | `oklch(0.965 0 0)` |
-| Sidebar | `--sidebar-background` | `oklch(0.985 0 0)` |
-| Body text | `--foreground` | `oklch(0.145 0 0)` |
-| Muted text | `--muted-foreground` | `oklch(0.556 0 0)` |
-| Border | `--border` | `oklch(0.922 0 0)` |
-| Primary (button bg, key accent) | `--primary` | `oklch(0.205 0 0)` — near-black |
-| Primary foreground | `--primary-foreground` | `oklch(0.985 0 0)` |
+| Subtle surface | `--muted` | `oklch(0.963 0.008 210)` |
+| Sidebar | `--sidebar-background` | `oklch(0.982 0.006 210)` |
+| Body text | `--foreground` | `oklch(0.165 0.012 210)` — blue-tinted ink |
+| Muted text | `--muted-foreground` | `oklch(0.45 0.010 210)` — 6.2:1 on white ✓ |
+| Border | `--border` | `oklch(0.905 0.010 210)` |
+| Primary (button bg, key accent) | `--primary` | `oklch(0.42 0.15 210)` — steel-blue |
+| Primary foreground | `--primary-foreground` | `oklch(0.98 0 0)` — white; 8:1 ✓ |
 | Destructive | `--destructive` | `oklch(0.577 0.245 27.325)` — red |
 
-**Dark mode** (`.dark` class on `<html>`)
+**Dark mode** (`.dark` class on `<html>` OR OS `prefers-color-scheme: dark`)
 
 | Role | Token | OKLCH |
 |---|---|---|
-| Background | `--background` | `oklch(0.145 0 0)` |
-| Surface | `--card` | `oklch(0.145 0 0)` |
-| Subtle surface | `--muted` | `oklch(0.269 0 0)` |
-| Sidebar | `--sidebar-background` | `oklch(0.175 0 0)` |
-| Body text | `--foreground` | `oklch(0.985 0 0)` |
-| Muted text | `--muted-foreground` | `oklch(0.708 0 0)` |
-| Border | `--border` | `oklch(0.269 0 0)` |
-| Primary (button bg) | `--primary` | `oklch(0.985 0 0)` — near-white |
-| Sidebar accent (only chroma in dark) | `--sidebar-primary` | `oklch(0.488 0.243 264.376)` — blue |
+| Background | `--background` | `oklch(0.145 0.015 210)` — blue-shadowed near-black |
+| Surface | `--card` | `oklch(0.170 0.015 210)` |
+| Subtle surface | `--muted` | `oklch(0.255 0.012 210)` |
+| Sidebar | `--sidebar-background` | `oklch(0.160 0.015 210)` |
+| Body text | `--foreground` | `oklch(0.970 0 0)` |
+| Muted text | `--muted-foreground` | `oklch(0.650 0.010 210)` — 6.5:1 on dark bg ✓ |
+| Border | `--border` | `oklch(0.280 0.015 210)` |
+| Primary (button bg) | `--primary` | `oklch(0.62 0.15 210)` — lighter for legibility |
+| Primary foreground | `--primary-foreground` | `oklch(0.12 0.015 210)` — dark ink; 5.3:1 ✓ |
 
-**Note**: The palette is entirely achromatic (C=0) except for destructive red and the dark sidebar primary blue (which appears only on one component). No brand chroma exists yet. `/impeccable colorize` is the recommended next step to introduce a purposeful brand accent.
+**Semantic divergences**: "Coming soon" badges use `bg-amber-500` (not primary) to distinguish informational status from actionable CTAs.
 
 ## Typography
 
@@ -74,12 +77,14 @@ No intentional motion system exists. Tailwind `transition-colors` appears on int
 
 ## Dark Mode
 
-Dark mode is applied via a `.dark` class on `<html>`. Toggle mechanism exists in the top bar (`ThemeToggle` component). CSS variables redefine all semantic tokens under `.dark {}` in `globals.css`. The system is complete — every token has a dark value.
+Dark mode activates via `.dark` class on `<html>` (explicit toggle) OR via `@media (prefers-color-scheme: dark)` matching `:root:not(.light)` (OS preference fallback). Add class `.light` to `<html>` to lock light mode regardless of OS. CSS variables redefine all semantic tokens under both selectors in `globals.css`.
+
+No theme toggle component exists yet in the app UI — OS preference is the only mechanism currently active.
 
 ## Known Gaps (priority order)
 
-1. **No brand chroma** — achromatic palette has no identity. Completely generic Shadcn default.
-2. **No motion system** — "Alive" personality requires purposeful motion. Currently zero entrance or interaction animation.
+1. **No motion system** — "Alive" personality requires purposeful motion. Currently zero entrance or interaction animation.
+2. **No theme toggle** — Dark mode works via OS preference; no in-app toggle to override it.
 3. **Single typeface** — Inter everywhere. A display or heading typeface would strengthen brand at landing-page scale.
 4. **No empty states** — Several surfaces (no entities, no chat history, new projects) have minimal or placeholder empty states.
-5. **Landing page** — Good structure, but neutral visual execution. Doesn't express "Intelligent · Alive · Collaborative" at all.
+5. **Landing page motion** — Brand identity is present via the steel-blue primary; expressiveness of the page could go further with motion and stronger feature visuals.
