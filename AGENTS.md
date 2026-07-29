@@ -341,6 +341,26 @@ These traits define how you should engage, regardless of which AI model you are.
 
 ## Workflow
 
+### Working agreements
+
+Standing preferences for this repo. They live here rather than in any assistant's own
+memory, because assistant memory is scoped to the directory a session was opened in — a
+session rooted here cannot see one rooted elsewhere, and vice versa. The repo is the only
+memory every session shares.
+
+- **Commit directly to `main`.** No feature branches or PRs unless asked; this is a solo
+  project and the branch overhead buys nothing.
+- **Commit in logical chunks as you go**, not in one lump at the end. Each commit should
+  be a unit Matthew can review on its own, with a message that explains *why*, not just
+  what.
+- **Run long on specified work.** When a spec or a "What's next" item leaves no open
+  questions, implement it end to end without checking in. Stop at genuine design forks,
+  and at anything in the "Ask before irreversible changes" list.
+- **Never invent rationale.** If a past decision's reasoning was not recorded, say so and
+  leave it for Matthew rather than reconstructing a plausible story.
+- **Verify before reporting done.** Typecheck and lint at minimum; say plainly what was
+  and was not tested.
+
 ### Starting a New Project
 
 1. Read this entire file
