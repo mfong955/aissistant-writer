@@ -19,7 +19,7 @@ When this file is used as a template for a new project, the static sections carr
 **Core functionality:**
 - **Chat-first authoring** — users spill unstructured ideas in chat; the AI organizes them into structured content files (characters, chapters, outlines, world-building, etc.)
 - **Flexible project organization** — VS Code-inspired layout with resizable panels. Tree-based project explorer where users create any file types they need. The UI renders whatever files exist.
-- **Multi-model AI via OpenRouter** — BYOK (bring your own key) with real-time token usage and cost display. Future: proxied AI with pay-per-prompt billing.
+- **Multi-model AI via OpenRouter** — two access paths: BYOK (bring your own key, no markup) as the default, or prepaid credits routed through the system key for users who don't want to manage API keys. Real-time token usage and cost display on both.
 - **Hierarchical context system** — L0 (full content), L1 (file summaries), L2 (project state) to efficiently manage context windows across any model size
 - **AI consistency checking** — the AI fact-checks against established character traits, settings, timelines, and flags contradictions
 - **Change logging** — every AI-driven or manual edit is timestamped and logged with daily session summaries
@@ -27,7 +27,11 @@ When this file is used as a template for a new project, the static sections carr
 - **File upload & processing** — users upload reference materials for AI review and integration
 - **Story graph change management** (future) — entity-relationship graph enabling retroactive change propagation when characters, plot points, or style change
 
-**Target users:** Solo fiction authors, creative writers of all types, and writing teams/collaborators (collaboration features in later phases).
+**Target users:** Writers who have a story in their head and never start it.
+
+The primary user is at **word zero** — carrying an idea, a character, or one vivid scene, blocked by the blank page. A close second is the writer returning to a project they abandoned. Serious long-form authors are fully supported by the feature set, but they are *not* who onboarding is designed for, and the product is not positioned against the "context wall" that generic AI tools hit at 80,000 words — that is the most contested position in the category and the one most likely to be erased as context windows grow.
+
+Collaboration features remain a later phase.
 
 **Key constraints:**
 - Web-first, architected for potential Tauri desktop wrapper later
@@ -36,47 +40,74 @@ When this file is used as a template for a new project, the static sections carr
 - Must support any LLM available through OpenRouter
 
 **Monetization strategy:**
-- Free tier: full organization tools, BYOK AI only, limited active projects
-- Pay-per-prompt: proxied AI with transparent per-action pricing and pre-loaded wallet (Phase 2)
-- Premium features: collaboration, advanced change management, publishing export (later phases)
+
+The product is **free**. No paid tier, no feature gating, no usage limits on the app itself. Users pay for AI inference, never for the software.
+
+- **BYOK is the default path.** Users bring their own OpenRouter key and pay their provider directly. Costs the project nothing; the user pays no markup. Onboarding should make this path feel easy, not advanced.
+- **Credits are a convenience on-ramp, not a business.** For users who don't want to manage API keys. Deliberately small, capped, and priced to break even — roughly 20% over cost, which covers Stripe (2.9% + $0.30) and OpenRouter's own fee. State the markup plainly in the UI; do not present it as a product tier.
+- **Donations** beyond that, with no gated reward.
+
+Rationale: maintenance budget is ~5 hours/week. Billing revenue at that scale would create support, refund, and digital-services tax obligations out of proportion to the income, and would convert a successful free tool into a failing business by its own metrics. The project's return is credibility and real users, not revenue.
 
 ### Status
 
-Architecture migrated to **local-first + encrypted cloud sync**. Build passes. App runs with zero configuration — no Supabase setup needed to develop or use locally.
+Deployed as a **hosted Supabase-backed web app** (Vercel). Build passes.
+
+> **Note:** the local-first SQLite architecture described in the 2026-05-17 decision below was reversed on 2026-06-24. There is no SQLite in the codebase. `src/lib/db/` is entirely Supabase, and auth is required.
 
 **What's done:**
-- Project scaffolding (Next.js 15 + TypeScript + Tailwind v4 + shadcn/ui)
+- Project scaffolding (Next.js 15 + React 19 + TypeScript + Tailwind v4 + shadcn/ui)
 - VS Code-like 3-panel layout with allotment (resizable, chat toggleable)
 - Project explorer (tree view, CRUD, rename, type icons)
 - Tiptap editor with tabs, autosave (2s debounce + SHA-256 hash)
 - Change logging (entity CRUD tracked with actor/timestamp)
-- OpenRouter integration (API key encryption, model listing, streaming chat)
-- AI chat panel (SSE streaming, tool calls, token/cost tracking, model selector)
+- OpenRouter integration (API key encrypted at rest, model listing, streaming chat, tool calls)
+- AI chat panel (SSE streaming, token/cost tracking, model selector) and inline AI actions on selection
 - Hierarchical context system (L0/L1/L2 context builder, relevance scoring, summary generation)
 - Session tracking (heartbeat, inactivity detection, session history)
-- File upload (drag-and-drop, stored locally in `.data/uploads/`, 10MB limit)
-- **Local SQLite data layer** (`src/lib/db/`) — all data stored in `.data/database.db`
-- **Local user identity** (`src/lib/local-user.ts`) — UUID in `.data/user.json`, no login required
-- **No Supabase required** — middleware, auth, and all API routes run fully offline
+- File upload and document extraction (PDF via `pdf-parse`, DOCX via `mammoth`)
+- **Supabase data layer** (`src/lib/db/`) — Postgres with RLS, three migrations in `supabase/`
+- **Supabase auth** — login, signup, OAuth callback, middleware-protected routes
+- **Two-track AI access** — `src/app/api/openrouter/chat/route.ts` already branches: user's own key (no deduction) or system key (deduct credit)
+- **Stripe credits** — wallet, transaction ledger, webhook with idempotency guard, purchase dialog
+- Landing page, project templates, OG meta tags, custom 404, steel-blue brand palette
+- Electron shell (`electron/`, `npm run electron:dev`)
+
+**Launch posture: BYOK only.** `OPENROUTER_SYSTEM_API_KEY` is left unset, which disables the credits path entirely — every user brings their own OpenRouter key and the project carries no inference cost, no Stripe surface, and no tax exposure. The credits code is complete and correct but dormant. Do not enable it without first applying migration 004 and re-reading the notes below.
+
+**Known problems:**
+- **Migration `004_usage_based_credits.sql` has not been applied to Supabase.** The code calls `deduct_credits(user_id, amount, description)`, which does not exist in the database until the migration runs. Harmless while the system key is unset, since that path never executes — but it must be applied before credits are ever switched on.
+- **Existing credit balances are in the old unit.** Any pre-migration balance is denominated in messages, not tenths of a cent — 50 credits becomes $0.05. Moot with no real users; zero or re-grant balances if that changes.
+- **Billing UI is still reachable while credits are disabled.** Settings surfaces a purchase dialog that leads nowhere useful under BYOK-only. Gate it on whether the system key is configured.
+- **No pre-flight cost estimate.** `MIN_BALANCE_TO_START` is a flat floor; the app cannot yet tell a user "this message will cost about $0.40" before they send it. Requires per-model pricing from OpenRouter's models endpoint.
+- **README.md is still the unmodified starter-template README.** It describes the AGENTS.md scaffold, not this product. It is the first thing a GitHub visitor sees.
 
 **To run locally:**
 ```bash
+cp .env.example .env.local
 npm install
-ENCRYPTION_KEY=any-32-char-secret npm run dev
+npm run dev
 ```
+Requires a Supabase project with the migrations in `supabase/migrations/` applied, and `ENCRYPTION_KEY` set before any user stores an API key. `OPENROUTER_SYSTEM_API_KEY` and the Stripe variables are optional — leaving the OpenRouter system key unset disables the credits path and makes the app BYOK-only.
 
 **What's next:**
-1. Tauri desktop wrapper (Rust installed, ready to proceed)
-2. E2E encrypted Supabase cloud sync (backup/restore)
-3. Conflict resolution UI with diff view (offline work + sync)
-4. Recovery key flow (required for E2E encryption)
-5. **Phase 2 Billing (proxied AI):** Supabase auth + OpenRouter provisioned key + per-prompt wallet system (see Phase 2 in Phases overview)
+1. **Gate the billing UI** on `OPENROUTER_SYSTEM_API_KEY` being set, so BYOK-only users never see a purchase flow
+2. **Canon / Manuscript / Unsorted explorer roots** — three permanent top-level containers; per-project-type skeleton inside Canon, seeded but fully editable; the AI may only write into these three and routes to Unsorted when uncertain
+3. **Cold-start onboarding** — three entry points (nothing yet / a seed / an existing pile) feeding a non-binding workflow chooser
+4. **BYOK activation path** — reduce the copy-paste-a-key barrier; verify whether OpenRouter's OAuth PKCE connect flow can replace manual key entry
+5. **Import staging** — never auto-file an import; propose, let the writer accept/edit/reject per item
+6. Rewrite README.md for the actual product
+7. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
+
+**Open design question — rewrites and restarts:**
+Importing an existing project is a primary entry point, which means the writer must be able to continue forward, rework parts, or strip it down and start over. The constraint is psychological before it is technical: writers do not delete drafts, because deleting feels like killing. The working direction is that nothing is ever destroyed, only re-shelved — separating durable *canon* (characters, settings, timeline, rules) from disposable *manuscript* (scenes, chapters), and treating structural changes as AI-generated **impact reports** the writer works through item by item, never as automatic propagation across the manuscript. Not yet decided; do not implement without confirming with Matthew.
 
 **Phases overview:**
-- **Phase 1 (MVP):** Chat-first authoring, project organization, BYOK AI via OpenRouter, hierarchical context system, token/cost tracking, file upload, change logging, session tracking
-- **Phase 2:** Proxied AI billing (wallet/recharge), inactivity auto-detection + auto-updates, enhanced session logs
-- **Phase 3:** Story graph change management, retroactive change propagation
-- **Phase 4:** Collaborative editing, developmental AI feedback, voice preservation, publishing export
+- **Phase 1 (MVP):** ✅ Chat-first authoring, project organization, BYOK AI via OpenRouter, hierarchical context system, token/cost tracking, file upload, change logging, session tracking
+- **Phase 2:** ✅ Proxied AI billing (wallet/recharge) — built, but pricing is flat-rate and must be made usage-proportional before public launch
+- **Phase 3 (current):** Cold-start onboarding, workflow chooser, import-and-organize, rewrite/restart model
+- **Phase 4:** Story graph change management. Retroactive change *propagation* is explicitly deferred in favor of impact reports the writer approves item by item — silently rewriting a user's manuscript is the fastest way to lose their trust permanently
+- **Phase 5:** Collaborative editing, developmental AI feedback, voice preservation, publishing export
 
 ### Key Decisions
 
@@ -119,6 +150,36 @@ Reasoning: Desktop app target (Tauri) requires offline-first. Writers expect dat
 Options considered: Tailwind + shadcn/ui, Material UI, Chakra UI
 Chose: Tailwind CSS + shadcn/ui
 Reasoning: shadcn/ui provides accessible, well-designed components that are copied into the project (not a dependency). Tailwind enables rapid styling without CSS file proliferation. Both are standard in the Next.js ecosystem.
+
+**[2026-06-24] Reversal of local-first architecture**
+Options considered: keep local SQLite + sync, return to Supabase as primary store
+Chose: Supabase as the primary store; local SQLite removed entirely
+Reasoning: *Not recorded at the time.* This decision was made in commit `d601666` and the Status section was not updated, which left the project record describing an architecture that no longer existed for five weeks. Matthew should fill in the actual reasoning here. The observable trade-off accepted: the app no longer runs with zero configuration, and offline use and the "your data lives on your machine" property from the 2026-05-17 decision were given up in exchange for a deployable hosted product with auth and billing.
+
+**[2026-07-29] Monetization — free, BYOK-first, credits at break-even**
+Options considered: paid tiers, credits-only with markup, free + BYOK + optional credits + donations
+Chose: free + BYOK default + break-even credits + donations (see Monetization strategy above)
+Reasoning: at ~5 hours/week, a revenue-seeking billing system creates support, refund, and tax obligations disproportionate to the income, and reframes a well-used free tool as a failing business. BYOK removes inference cost entirely. The credits path is retained only because requiring a novelist to obtain an API key before seeing the product would lose most would-be users at the door.
+
+**[2026-07-29] Positioning — aim at the cold start, not the context wall**
+Options considered: keep the "AI that remembers your whole project" position, re-aim at writers who never start
+Chose: re-aim at the cold start
+Reasoning: the context-wall position is directly contested by NovelCrafter, Sudowrite, and Campfire, all of which shipped first with existing communities, and it is positioned against a limitation that frontier labs are actively engineering away. The cold-start problem is larger, underserved, durable, and is the problem Matthew personally has — he is the user for this version and is not the user for the other one. Landing line: "Bring your own idea. Let's get started."
+
+**[2026-07-29] Brand — earnest product voice, joke domain**
+Options considered: lean into the smartaiss.com pun throughout the product voice, or keep the product earnest
+Chose: earnest product voice; smartaiss.com carries the joke as a URL only
+Reasoning: the product's job is to sit with someone at a blank page. A wry brand voice undercuts that, and would contradict the existing PRODUCT.md brand direction ("confident but not precious, no cheerleader energy") which lists Sudowrite's whimsy as an anti-reference. A memorable domain and an earnest product are compatible; a joke name on an earnest product is not.
+
+**[2026-07-29] Credit pricing — usage-proportional with a circuit breaker**
+Options considered: (A) usage-proportional deduction, (B) flat rate restricted to cheap models, (C) A plus a per-message cost ceiling
+Chose: C
+Reasoning: flat-rate deduction had unbounded downside — one credit against a frontier model on a large context. Credits are now denominated in tenths of a cent and deducted at OpenRouter's actual reported cost × 1.2. Deduction moved *after* the generation, since cost is unknowable before it, with `MIN_BALANCE_TO_START` as a pre-flight floor so a balance can only go slightly negative. The ceiling deliberately does *not* cap response length: `max_tokens` stays unset, and the breaker only declines to start the post-tool-call follow-up round-trip. Failing before work begins is acceptable; truncating a writer's prose mid-sentence is not.
+
+**[2026-07-29] Explorer structure — fixed roots, seeded skeleton, constrained AI**
+Options considered: fully free-form tree (previous behavior), fully fixed schema, fixed roots with editable interior
+Chose: fixed roots with editable interior — `Canon`, `Manuscript`, `Unsorted`, none deletable
+Reasoning: the thing that fragments a free-form tree over months is not the writer, it is the model — given latitude it invents "Characters", then "Cast", then "characters" across sessions, and the context builder silently starts missing things. Fixing the roots turns relevance guessing into lookup, makes "keep canon, shelve manuscript" a subtree operation, and removes the second blank page a cold-start writer would otherwise face. The interior stays editable because the correct taxonomy is not yet known — no real imports have happened. Enforced at the application layer, not the schema, so revising the ontology later is a migration of rows rather than tables. `Unsorted` is a permanent first-class location, not an error state, because real projects contain genuinely ambiguous material.
 
 ### Architecture
 
@@ -212,6 +273,8 @@ All project context lives in this file until the project grows enough to warrant
 | Monetization strategy | Goal section above |
 | Context window strategy | Key Decisions section above |
 | Competitive research | Discussed in initial planning session (not persisted — key insight: no tool combines strong organization + flexible AI + retroactive change management) |
+| Cold-start onboarding, workflows, rewrite model | `docs/onboarding-workflows.md` |
+| Credit math, markup, and cost ceilings | `src/lib/billing/credits.ts` (single source of truth, commented) |
 | Assistant behavior guidelines | Assistant Guidelines section below |
 | Development principles | Development Principles section below |
 | How to start or continue work | Workflow section below |
