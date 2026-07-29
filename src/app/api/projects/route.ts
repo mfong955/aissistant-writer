@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/get-user-id";
 import { dbGetProjects, dbCreateProject } from "@/lib/db/projects";
-import { initProjectFolders } from "@/lib/db/entities";
+import { ensureExplorerRoots } from "@/lib/db/entities";
 
 export async function GET() {
   try {
@@ -27,8 +27,6 @@ export async function POST(request: Request) {
   }
 
   const project = await dbCreateProject(userId, name, description ?? null, project_type ?? null);
-  if (project_type) {
-    await initProjectFolders(project.id, userId, project.project_type);
-  }
+  await ensureExplorerRoots(project.id, userId, project.project_type);
   return NextResponse.json({ project }, { status: 201 });
 }

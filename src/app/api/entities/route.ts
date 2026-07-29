@@ -27,6 +27,12 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (!parent_id) {
+    return NextResponse.json(
+      { error: "parent_id is required — entities must be created inside Canon, Manuscript, or Unsorted." },
+      { status: 400 }
+    );
+  }
 
   const entity = await dbCreateEntity({
     projectId: project_id,

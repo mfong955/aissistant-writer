@@ -1,5 +1,6 @@
 import { textToTiptapJson } from "./tiptap-utils";
 import type { EntityType, ProjectType } from "@/types/database";
+import type { ExplorerRootKey } from "./entity-roots";
 
 const CHARACTER_TEMPLATE = `
 # Character Name
@@ -135,6 +136,8 @@ export type ProjectSeedItem = {
 
 export type ProjectFolderConfig = {
   name: string;
+  /** Which of the three fixed explorer roots this folder is seeded under. */
+  root: ExplorerRootKey;
   seeds: ProjectSeedItem[];
 };
 
@@ -142,62 +145,69 @@ export type ProjectTemplateConfig = {
   folders: ProjectFolderConfig[];
 };
 
+// Per docs/onboarding-workflows.md §1: Canon is cumulative and survives every rewrite,
+// Manuscript is disposable draft content, Unsorted holds anything not yet classified.
+// Only the novel skeleton (Characters, Settings, Timeline, Rules) is spec'd explicitly;
+// the rest is a best-effort mapping of the prior flat folder set onto the three roots —
+// seeded, not fixed, and expected to be revised once real imports inform the taxonomy.
 export const PROJECT_TEMPLATES: Partial<Record<NonNullable<ProjectType>, ProjectTemplateConfig>> = {
   novel: {
     folders: [
-      { name: "Characters", seeds: [] },
-      { name: "Settings", seeds: [{ name: "World Overview", type: "world_building", templateKey: "world_building" }] },
-      { name: "Chapters", seeds: [{ name: "Chapter 1", type: "chapter", templateKey: "chapter" }] },
-      { name: "Outlines", seeds: [{ name: "Story Outline", type: "outline", templateKey: "outline" }] },
-      { name: "Notes", seeds: [] },
+      { name: "Characters", root: "canon", seeds: [] },
+      { name: "Settings", root: "canon", seeds: [{ name: "World Overview", type: "world_building", templateKey: "world_building" }] },
+      { name: "Timeline", root: "canon", seeds: [] },
+      { name: "Rules", root: "canon", seeds: [] },
+      { name: "Chapters", root: "manuscript", seeds: [{ name: "Chapter 1", type: "chapter", templateKey: "chapter" }] },
+      { name: "Outlines", root: "unsorted", seeds: [{ name: "Story Outline", type: "outline", templateKey: "outline" }] },
+      { name: "Notes", root: "unsorted", seeds: [] },
     ],
   },
   short_story: {
     folders: [
-      { name: "Characters", seeds: [] },
-      { name: "Settings", seeds: [] },
-      { name: "Drafts", seeds: [{ name: "Draft", type: "chapter" }] },
-      { name: "Notes", seeds: [{ name: "Story Outline", type: "outline", templateKey: "outline" }] },
+      { name: "Characters", root: "canon", seeds: [] },
+      { name: "Settings", root: "canon", seeds: [] },
+      { name: "Drafts", root: "manuscript", seeds: [{ name: "Draft", type: "chapter" }] },
+      { name: "Notes", root: "unsorted", seeds: [{ name: "Story Outline", type: "outline", templateKey: "outline" }] },
     ],
   },
   non_fiction: {
     folders: [
-      { name: "Chapters", seeds: [{ name: "Chapter 1 — Introduction", type: "chapter", templateKey: "chapter" }] },
-      { name: "Research", seeds: [] },
-      { name: "Outlines", seeds: [{ name: "Book Outline", type: "outline", templateKey: "outline" }] },
-      { name: "Notes", seeds: [] },
+      { name: "Research", root: "canon", seeds: [] },
+      { name: "Chapters", root: "manuscript", seeds: [{ name: "Chapter 1 — Introduction", type: "chapter", templateKey: "chapter" }] },
+      { name: "Outlines", root: "unsorted", seeds: [{ name: "Book Outline", type: "outline", templateKey: "outline" }] },
+      { name: "Notes", root: "unsorted", seeds: [] },
     ],
   },
   textbook: {
     folders: [
-      { name: "Units", seeds: [{ name: "Unit 1 — Introduction", type: "chapter", templateKey: "chapter" }] },
-      { name: "Exercises", seeds: [] },
-      { name: "Glossary", seeds: [] },
-      { name: "Notes", seeds: [] },
+      { name: "Glossary", root: "canon", seeds: [] },
+      { name: "Units", root: "manuscript", seeds: [{ name: "Unit 1 — Introduction", type: "chapter", templateKey: "chapter" }] },
+      { name: "Exercises", root: "unsorted", seeds: [] },
+      { name: "Notes", root: "unsorted", seeds: [] },
     ],
   },
   screenplay: {
     folders: [
-      { name: "Characters", seeds: [] },
-      { name: "Acts", seeds: [] },
-      { name: "Scenes", seeds: [] },
-      { name: "Notes", seeds: [{ name: "Beat Sheet", type: "outline", templateKey: "outline" }] },
+      { name: "Characters", root: "canon", seeds: [] },
+      { name: "Acts", root: "manuscript", seeds: [] },
+      { name: "Scenes", root: "manuscript", seeds: [] },
+      { name: "Notes", root: "unsorted", seeds: [{ name: "Beat Sheet", type: "outline", templateKey: "outline" }] },
     ],
   },
   poetry: {
     folders: [
-      { name: "Poems", seeds: [{ name: "First Poem", type: "chapter" }] },
-      { name: "Collections", seeds: [] },
-      { name: "Notes", seeds: [] },
+      { name: "Poems", root: "manuscript", seeds: [{ name: "First Poem", type: "chapter" }] },
+      { name: "Collections", root: "manuscript", seeds: [] },
+      { name: "Notes", root: "unsorted", seeds: [] },
     ],
   },
   game_narrative: {
     folders: [
-      { name: "Characters", seeds: [] },
-      { name: "Lore", seeds: [{ name: "World Lore", type: "world_building", templateKey: "world_building" }] },
-      { name: "Quests", seeds: [] },
-      { name: "Dialogue", seeds: [] },
-      { name: "Notes", seeds: [] },
+      { name: "Characters", root: "canon", seeds: [] },
+      { name: "Lore", root: "canon", seeds: [{ name: "World Lore", type: "world_building", templateKey: "world_building" }] },
+      { name: "Quests", root: "manuscript", seeds: [] },
+      { name: "Dialogue", root: "manuscript", seeds: [] },
+      { name: "Notes", root: "unsorted", seeds: [] },
     ],
   },
 };

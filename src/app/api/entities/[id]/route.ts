@@ -4,6 +4,7 @@ import path from "path";
 import { dbGetEntity, dbUpdateEntity, dbDeleteEntity, appendToSessionLog } from "@/lib/db/entities";
 import { dbCreateChangeLog } from "@/lib/db/change-logs";
 import { getUserId } from "@/lib/get-user-id";
+import { isExplorerRootEntity } from "@/lib/entity-roots";
 
 export async function GET(
   request: Request,
@@ -35,10 +36,24 @@ export async function PATCH(
     return NextResponse.json({ error: "project_id is required" }, { status: 400 });
   }
 
-  const [before, entity] = await Promise.all([
-    dbGetEntity(id, project_id),
-    dbUpdateEntity(id, project_id, updates),
-  ]);
+  const before = await dbGetEntity(id, project_id);
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const isRoot = isExplorerRootEntity(before);
+  if (isRoot && "name" in updates && updates.name !== before.name) {
+    return NextResponse.json({ error: "Canon, Manuscript, and Unsorted cannot be renamed." }, { status: 400 });
+  }
+  if (isRoot && "parent_id" in updates && updates.parent_id !== before.parent_id) {
+    return NextResponse.json({ error: "Canon, Manuscript, and Unsorted cannot be moved." }, { status: 400 });
+  }
+  if (!isRoot && "parent_id" in updates && updates.parent_id === null) {
+    return NextResponse.json(
+      { error: "Entities can't be moved outside Canon, Manuscript, or Unsorted — move to Unsorted instead." },
+      { status: 400 }
+    );
+  }
+
+  const entity = await dbUpdateEntity(id, project_id, updates);
   if (!entity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (before && updates.name && updates.name !== before.name) {
@@ -68,6 +83,9 @@ export async function DELETE(
   }
 
   const entity = await dbGetEntity(id, projectId);
+  if (entity && isExplorerRootEntity(entity)) {
+    return NextResponse.json({ error: "Canon, Manuscript, and Unsorted are fixed containers and cannot be deleted." }, { status: 400 });
+  }
   if (entity?.type === "image" && entity.content?.type === "image_file") {
     const url = entity.content.url as string;
     const filename = url.split("/").pop();

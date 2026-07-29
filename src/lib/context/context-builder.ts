@@ -3,6 +3,7 @@ import { scoreEntities } from "./relevance-scorer";
 import { estimateTokens } from "./token-estimator";
 import { buildSystemPrompt } from "./system-prompt-template";
 import { extractTextFromTiptap } from "@/lib/tiptap-utils";
+import { findRootKeyForEntity } from "@/lib/entity-roots";
 import type { Entity, EntitySummary } from "@/types/database";
 
 interface ContextBuildResult {
@@ -116,14 +117,37 @@ export async function buildContext(params: {
     }
   }
 
+  // Canon is cumulative and small relative to Manuscript, so its summaries are included by
+  // lookup rather than relevance-scored — the AI should always see established story facts.
+  // Manuscript and Unsorted stay relevance-scored below (docs/onboarding-workflows.md §1).
+  const entityById = new Map(allEntities.map((e) => [e.id, e]));
+  const summaryByEntityId = new Map(allSummaries.map((s) => [s.entity_id, s]));
+  const canonEntityIds = new Set(
+    allEntities
+      .filter((e) => e.type !== "folder" && findRootKeyForEntity(e, entityById) === "canon")
+      .map((e) => e.id)
+  );
+
+  const includedSummaries: Array<{ name: string; type: string; summary: string }> = [];
+  const canonEntitiesSorted = allEntities
+    .filter((e) => canonEntityIds.has(e.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const entity of canonEntitiesSorted) {
+    const summary = summaryByEntityId.get(entity.id);
+    if (!summary) continue;
+    const summaryTokens = estimateTokens(summary.summary);
+    if (summaryTokens > remainingBudget) continue;
+    includedSummaries.push({ name: entity.name, type: entity.type, summary: summary.summary });
+    remainingBudget -= summaryTokens;
+  }
+
   const scored = scoreEntities({
-    entities: allEntities,
+    entities: allEntities.filter((e) => !canonEntityIds.has(e.id)),
     summaries: allSummaries,
     userMessage,
     activeEntityIds,
   });
 
-  const includedSummaries: Array<{ name: string; type: string; summary: string }> = [];
   for (const item of scored) {
     if (!item.summary || item.score === 0) continue;
     const summaryTokens = estimateTokens(item.summary.summary);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { getUserId } from "@/lib/get-user-id";
-import { dbCreateEntity } from "@/lib/db/entities";
+import { dbCreateEntity, ensureExplorerRoot } from "@/lib/db/entities";
 
 export async function POST(request: Request) {
   try {
@@ -26,11 +26,13 @@ export async function POST(request: Request) {
 
     const bytes = await file.arrayBuffer();
     await fs.writeFile(path.join(uploadDir, filename), Buffer.from(bytes));
+    const unsorted = await ensureExplorerRoot(projectId, userId, "unsorted");
     const entity = await dbCreateEntity({
       projectId,
       userId,
       name,
       type: "image",
+      parentId: unsorted.id,
       content: {
         type: "image_file",
         url: `/api/images/${projectId}/${filename}`,

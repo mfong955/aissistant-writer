@@ -2,38 +2,88 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import type { Entity, EntityType, ProjectType } from "@/types/database";
 import { textToTiptapJson, extractTextFromTiptap, replaceTextInTiptapDoc } from "@/lib/tiptap-utils";
 import { PROJECT_TEMPLATES, getTemplatesForType } from "@/lib/templates";
+import { EXPLORER_ROOTS, reservedRootTag, type ExplorerRootKey } from "@/lib/entity-roots";
 
-export async function initProjectFolders(
+/**
+ * Ensures a single fixed explorer root (Canon / Manuscript / Unsorted) exists for a project.
+ * Idempotent by name+type, matching the ensure* pattern used for Progress/Instructions/Logs
+ * below. Roots are ordinary `folder` entities tagged via `properties._reserved` — enforced
+ * at the application layer, not the schema (docs/onboarding-workflows.md §1).
+ */
+export async function ensureExplorerRoot(
   projectId: string,
   userId: string,
-  projectType: ProjectType | null
-): Promise<string[]> {
+  key: ExplorerRootKey
+): Promise<Entity> {
+  const config = EXPLORER_ROOTS.find((r) => r.key === key)!;
+  const supabase = getAdminClient();
+  const { data: existing } = await supabase
+    .from("entities")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("name", config.name)
+    .eq("type", "folder")
+    .is("parent_id", null)
+    .single();
+
+  if (existing) return existing as Entity;
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("entities")
+    .insert({
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      user_id: userId,
+      parent_id: null,
+      type: "folder",
+      name: config.name,
+      content: null,
+      properties: { _reserved: reservedRootTag(key) },
+      sort_order: config.sortOrder,
+      created_at: now,
+      updated_at: now,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Entity;
+}
+
+/** Seeds the project-type skeleton (per src/lib/templates.ts) inside the given roots. Idempotent. */
+async function seedProjectTemplateFolders(
+  projectId: string,
+  userId: string,
+  projectType: ProjectType | null,
+  roots: Record<ExplorerRootKey, Entity>
+): Promise<void> {
   const template = projectType ? PROJECT_TEMPLATES[projectType] : null;
-  if (!template?.folders.length) return [];
+  if (!template?.folders.length) return;
 
   const supabase = getAdminClient();
   const now = new Date().toISOString();
 
   const { data: existing } = await supabase
     .from("entities")
-    .select("name")
+    .select("name, parent_id")
     .eq("project_id", projectId)
-    .eq("type", "folder")
-    .is("parent_id", null) as unknown as { data: { name: string }[] | null; error: null };
+    .eq("type", "folder") as unknown as { data: { name: string; parent_id: string | null }[] | null; error: null };
 
-  const existingNames = new Set((existing ?? []).map((r: { name: string }) => r.name));
-  const created: string[] = [];
+  const existingByParent = new Set(
+    (existing ?? []).map((r) => `${r.parent_id ?? ""}:${r.name}`)
+  );
 
   for (let i = 0; i < template.folders.length; i++) {
     const folderConfig = template.folders[i];
-    if (existingNames.has(folderConfig.name)) continue;
+    const rootId = roots[folderConfig.root].id;
+    if (existingByParent.has(`${rootId}:${folderConfig.name}`)) continue;
 
     const folderId = crypto.randomUUID();
     await supabase.from("entities").insert({
       id: folderId,
       project_id: projectId,
       user_id: userId,
-      parent_id: null,
+      parent_id: rootId,
       type: "folder",
       name: folderConfig.name,
       content: null,
@@ -42,7 +92,6 @@ export async function initProjectFolders(
       created_at: now,
       updated_at: now,
     });
-    created.push(folderConfig.name);
 
     // Seed content entities inside this folder
     for (let j = 0; j < folderConfig.seeds.length; j++) {
@@ -67,7 +116,82 @@ export async function initProjectFolders(
       });
     }
   }
-  return created;
+}
+
+/**
+ * Ensures Canon, Manuscript, and Unsorted exist for a project, and seeds the project-type
+ * Canon skeleton. Every project creation/access path must call this — see
+ * docs/onboarding-workflows.md §1.
+ */
+export async function ensureExplorerRoots(
+  projectId: string,
+  userId: string,
+  projectType: ProjectType | null
+): Promise<Record<ExplorerRootKey, Entity>> {
+  const [canon, manuscript, unsorted] = await Promise.all([
+    ensureExplorerRoot(projectId, userId, "canon"),
+    ensureExplorerRoot(projectId, userId, "manuscript"),
+    ensureExplorerRoot(projectId, userId, "unsorted"),
+  ]);
+  const roots: Record<ExplorerRootKey, Entity> = { canon, manuscript, unsorted };
+  await seedProjectTemplateFolders(projectId, userId, projectType, roots);
+  return roots;
+}
+
+/**
+ * Resolves (creating as needed) the folder a new AI-authored entity should be placed in,
+ * given a fixed root and an optional slash-separated path inside it. Used by the
+ * create_entity tool so the model can only ever write inside Canon/Manuscript/Unsorted.
+ */
+export async function resolveEntityParent(
+  projectId: string,
+  userId: string,
+  root: ExplorerRootKey,
+  path?: string | null
+): Promise<string> {
+  const rootEntity = await ensureExplorerRoot(projectId, userId, root);
+  const segments = (path ?? "")
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const supabase = getAdminClient();
+  let parentId = rootEntity.id;
+  const now = new Date().toISOString();
+
+  for (const segment of segments) {
+    const { data: existing } = await supabase
+      .from("entities")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("parent_id", parentId)
+      .eq("type", "folder")
+      .eq("name", segment)
+      .single() as unknown as { data: { id: string } | null; error: null };
+
+    if (existing) {
+      parentId = existing.id;
+      continue;
+    }
+
+    const folderId = crypto.randomUUID();
+    await supabase.from("entities").insert({
+      id: folderId,
+      project_id: projectId,
+      user_id: userId,
+      parent_id: parentId,
+      type: "folder",
+      name: segment,
+      content: null,
+      properties: {},
+      sort_order: 0,
+      created_at: now,
+      updated_at: now,
+    });
+    parentId = folderId;
+  }
+
+  return parentId;
 }
 
 export async function dbGetEntities(projectId: string): Promise<Entity[]> {

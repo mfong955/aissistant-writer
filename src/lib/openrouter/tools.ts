@@ -1,8 +1,11 @@
 import type { ToolDefinition } from "./types";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
-import { appendToSessionLog } from "@/lib/db/entities";
+import { appendToSessionLog, resolveEntityParent } from "@/lib/db/entities";
+import { isExplorerRootEntity, type ExplorerRootKey } from "@/lib/entity-roots";
 import type { EntityType } from "@/types/database";
+
+const EXPLORER_ROOT_KEYS: ExplorerRootKey[] = ["canon", "manuscript", "unsorted"];
 
 export const entityTools: ToolDefinition[] = [
   {
@@ -28,7 +31,7 @@ export const entityTools: ToolDefinition[] = [
     function: {
       name: "create_entity",
       description:
-        "Create a new entity in the project (character, chapter, outline, note, world_building, folder, or custom). IMPORTANT PLACEMENT RULES: Always check the Project Files list in the system prompt for existing folder IDs. Non-folder entities MUST use parent_id to place them in the correct folder (e.g. characters go in the Characters/ folder, chapters go in Chapters/, etc.). If the correct folder does not exist yet, call create_entity with type='folder' first to create it, then immediately call create_entity again for the actual entity with parent_id set to the new folder's ID. Never place content entities at the root level if an appropriate folder exists or should exist.",
+        "Create a new entity in the project (character, chapter, outline, note, world_building, folder, or custom). Every entity must be placed under one of three fixed top-level roots: 'canon' (durable story facts — characters, settings, timeline, rules; survives every rewrite), 'manuscript' (the actual draft — scenes, chapters; disposable and replaceable), or 'unsorted' (anything you're not confident how to classify). Use `path` to nest inside folders within that root, e.g. 'Characters' or 'Settings/Locations' — folders are created automatically as needed. When uncertain where something belongs, use root='unsorted' rather than guessing or inventing a new top-level location.",
       parameters: {
         type: "object",
         properties: {
@@ -42,12 +45,17 @@ export const entityTools: ToolDefinition[] = [
             type: "string",
             description: "The content for the entity in plain text. This will be converted to the editor format.",
           },
-          parent_id: {
+          root: {
             type: "string",
-            description: "ID of the parent folder entity (from the Project Files list). Required for all non-folder entities — look up the folder's ID in Project Files and always set this.",
+            enum: ["canon", "manuscript", "unsorted"],
+            description: "Which fixed top-level container to place this entity under. canon = durable story facts (characters, settings, timeline, rules). manuscript = the draft itself (scenes, chapters). unsorted = anything ambiguous — the safe default when unsure.",
+          },
+          path: {
+            type: "string",
+            description: "Optional folder path within the root, e.g. 'Characters' or 'Locations/Capital City'. Folders are created automatically if they don't already exist. Omit to place the entity directly under the root.",
           },
         },
-        required: ["name", "type", "content"],
+        required: ["name", "type", "content", "root"],
       },
     },
   },
@@ -119,11 +127,21 @@ export async function executeToolCall(
     }
 
     case "create_entity": {
+      const rootArg = args.root as string;
+      if (!EXPLORER_ROOT_KEYS.includes(rootArg as ExplorerRootKey)) {
+        return {
+          success: false,
+          result: { error: `Invalid root "${rootArg}". Must be one of: canon, manuscript, unsorted.` },
+          description: `Failed to create ${args.name as string}: invalid root`,
+        };
+      }
+      const root = rootArg as ExplorerRootKey;
       const content = textToTiptapJson(args.content as string);
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
 
       try {
+        const parentId = await resolveEntityParent(projectId, userId, root, args.path as string | undefined);
         await supabase.from("entities").insert({
           id,
           project_id: projectId,
@@ -131,7 +149,7 @@ export async function executeToolCall(
           name: args.name as string,
           type: args.type as EntityType,
           content,
-          parent_id: (args.parent_id as string) || null,
+          parent_id: parentId,
           sort_order: 0,
           properties: {},
           created_at: now,
@@ -171,13 +189,20 @@ export async function executeToolCall(
 
       const { data: entity } = await supabase
         .from("entities")
-        .select("name, type")
+        .select("name, type, properties")
         .eq("id", entityId)
         .eq("project_id", projectId)
         .single();
 
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to update entity ${entityId}` };
+      }
+      if (isExplorerRootEntity(entity as { properties: Record<string, unknown> })) {
+        return {
+          success: false,
+          result: { error: "Canon, Manuscript, and Unsorted are fixed containers and cannot be edited." },
+          description: `Refused to update fixed root: ${entity.name}`,
+        };
       }
 
       const name = (args.name as string | undefined) || entity.name;
@@ -219,10 +244,18 @@ export async function executeToolCall(
       const entityId = args.entity_id as string;
       const { data: entity } = await supabase
         .from("entities")
-        .select("name, type")
+        .select("name, type, properties")
         .eq("id", entityId)
         .eq("project_id", projectId)
         .single();
+
+      if (entity && isExplorerRootEntity(entity as { properties: Record<string, unknown> })) {
+        return {
+          success: false,
+          result: { error: "Canon, Manuscript, and Unsorted are fixed containers and cannot be deleted." },
+          description: `Refused to delete fixed root: ${entity.name}`,
+        };
+      }
 
       try {
         await supabase

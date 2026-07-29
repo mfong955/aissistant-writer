@@ -3,7 +3,7 @@ import { ProjectProvider } from "@/contexts/project-context";
 import { ProjectShell } from "./project-shell";
 import { dbGetProject } from "@/lib/db/projects";
 import { createClient } from "@/lib/supabase/server";
-import { ensureInstructionsEntity, ensureLogsFolder, ensureProgressEntity } from "@/lib/db/entities";
+import { ensureInstructionsEntity, ensureLogsFolder, ensureProgressEntity, ensureExplorerRoots } from "@/lib/db/entities";
 
 export default async function ProjectLayout({
   params,
@@ -26,6 +26,7 @@ export default async function ProjectLayout({
     ensureInstructionsEntity(projectId, userId, project.system_instructions),
     ensureProgressEntity(projectId, userId),
     ensureLogsFolder(projectId, userId),
+    ensureExplorerRoots(projectId, userId, project.project_type),
   ]);
 
   return (

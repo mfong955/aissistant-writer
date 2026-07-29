@@ -1,79 +1,52 @@
 import type { ProjectType } from "@/types/database";
 
 const FOLDER_GUIDELINES: Record<NonNullable<ProjectType>, string> = {
-  novel: `Recommended folder structure for novels:
-- Characters/ — one file per significant character (arc, backstory, voice, relationships)
-- Settings/ — locations, world-building, maps, culture, history
-- Chapters/ — numbered chapter drafts (e.g. "Chapter 01 - The Beginning")
-- Outlines/ — beat sheets, chapter-by-chapter outlines, scene lists
-- Notes/ — research, inspiration, miscellaneous
+  novel: `- root="canon": Characters/ (arc, backstory, voice, relationships), Settings/ (locations, world-building, maps, culture, history), Timeline/ (chronology of story events), Rules/ (magic systems, story logic, constraints)
+- root="manuscript": Chapters/ — numbered chapter drafts (e.g. "Chapter 01 - The Beginning"); use a zero-padded number prefix so files sort correctly
+- root="unsorted": Outlines/ (beat sheets, scene lists), Notes/ (research, inspiration, miscellaneous)`,
 
-When creating a new character, place it inside Characters/.
-When creating a new chapter, place it inside Chapters/ and use a zero-padded number prefix so files sort correctly.
-When creating world-building content, place it inside Settings/.`,
+  short_story: `- root="canon": Characters/, Settings/
+- root="manuscript": Drafts/ — numbered drafts of the story
+- root="unsorted": Notes/ — research, ideas, revision notes
 
-  short_story: `Recommended folder structure for short stories:
-- Characters/ — main and supporting characters
-- Settings/ — location and atmosphere notes
-- Drafts/ — numbered drafts of the story
-- Notes/ — research, ideas, revision notes
+Keep the structure lean — short stories rarely need more than these folders.`,
 
-Keep the structure lean — short stories rarely need more than these four folders.`,
+  non_fiction: `- root="canon": Research/ — source notes, interview transcripts, data, quotes with citations (always include the source name and date)
+- root="manuscript": Chapters/ — numbered chapter drafts; link to the relevant research files in the chapter notes
+- root="unsorted": Outlines/ (book structure, chapter summaries, argument maps), Notes/ (open questions, ideas, editorial feedback)`,
 
-  non_fiction: `Recommended folder structure for non-fiction books:
-- Chapters/ — numbered chapter drafts
-- Research/ — source notes, interview transcripts, data, quotes with citations
-- Outlines/ — book structure, chapter summaries, argument maps
-- Notes/ — open questions, ideas, editorial feedback
+  textbook: `- root="canon": Glossary/ — key terms with definitions
+- root="manuscript": Units/ — top-level unit folders (e.g. "Unit 1 - Introduction"), with chapter drafts nested inside; use a consistent numbering scheme (Unit 01, Chapter 01-01, etc.)
+- root="unsorted": Exercises/ (end-of-chapter problems and solutions), Notes/ (instructor notes, learning objectives, errata)`,
 
-When creating research notes, always include the source name and date.
-When creating a chapter, link to the relevant research files in the chapter notes.`,
+  screenplay: `- root="canon": Characters/ — character breakdowns (motivation, arc, voice, relationships)
+- root="manuscript": Acts/ (act structure documents), Scenes/ (individual scene scripts or breakdowns) — use standard screenplay formatting in scene headings (INT./EXT., location, time)
+- root="unsorted": Notes/ — theme analysis, production notes, revision history`,
 
-  textbook: `Recommended folder structure for textbooks:
-- Units/ — top-level unit folders (e.g. "Unit 1 - Introduction")
-- Chapters/ — chapter drafts, placed inside their unit folder
-- Exercises/ — end-of-chapter problems and solutions
-- Glossary/ — key terms with definitions
-- Notes/ — instructor notes, learning objectives, errata
+  poetry: `- root="manuscript": Poems/ (individual poem files), Collections/ (thematic groupings or sequences)
+- root="unsorted": Notes/ — craft notes, revision history, influences
 
-Use a consistent numbering scheme: Unit 01, Chapter 01-01, etc.`,
+Keep poem file names short and descriptive. Group related poems into Collections/ subfolders. This project type has no default Canon folders — create one under root="canon" only if durable world/character facts emerge.`,
 
-  screenplay: `Recommended folder structure for screenplays:
-- Characters/ — character breakdowns (motivation, arc, voice, relationships)
-- Acts/ — act structure documents
-- Scenes/ — individual scene scripts or scene-by-scene breakdowns
-- Notes/ — theme analysis, production notes, revision history
+  game_narrative: `- root="canon": Characters/ (protagonists, NPCs, factions — motivation, backstory, dialogue voice), Lore/ (world history, rules, mythology, geography — flag whether player-visible or background-only)
+- root="manuscript": Quests/ (objectives, success/fail states), Dialogue/ (conversation scripts and dialogue trees — always note which character speaks and their emotional state)
+- root="unsorted": Notes/ — design notes, tone guidelines, consistency rules`,
 
-Use standard screenplay formatting conventions in scene headings (INT./EXT., location, time).`,
-
-  poetry: `Recommended folder structure for poetry collections:
-- Poems/ — individual poem files
-- Collections/ — thematic groupings or sequences
-- Notes/ — craft notes, revision history, influences
-
-Keep poem file names short and descriptive. Group related poems into Collections/ subfolders.`,
-
-  game_narrative: `Recommended folder structure for game narratives:
-- Characters/ — protagonists, NPCs, factions (motivation, backstory, dialogue voice)
-- Lore/ — world history, rules, mythology, geography
-- Quests/ — quest scripts, objectives, success/fail states
-- Dialogue/ — conversation scripts and dialogue trees
-- Notes/ — design notes, tone guidelines, consistency rules
-
-When creating dialogue, always note which character speaks and what emotional state they are in.
-When creating lore, flag whether it is player-visible or background-only.`,
-
-  other: `When creating files, group related content into clearly named folders.
+  other: `Group related content into clearly named folders inside the appropriate root.
 Use descriptive file names that make the content obvious at a glance.
 Prefer a shallow folder structure — no more than two levels deep unless the project is very large.`,
 };
 
 function getDefaultFolderGuidance(projectType: ProjectType | null): string {
-  if (!projectType) {
-    return `When creating files, group related content into clearly named folders (e.g. Characters/, Settings/, Chapters/).
-Use descriptive, consistently formatted names. Prefer a shallow folder structure.`;
+  const perType = projectType ? FOLDER_GUIDELINES[projectType] : null;
+  const intro = `Every entity lives under one of three fixed top-level roots — pass \`root\` (and optionally \`path\`) to create_entity:
+- canon — durable story facts that survive every rewrite
+- manuscript — the actual draft; disposable and replaceable
+- unsorted — anything you're not confident how to classify; always a safe default`;
+  if (!perType) {
+    return `${intro}\n\nWhen creating files, group related content into clearly named folders inside the appropriate root (e.g. Characters/ under canon, Chapters/ under manuscript). Use descriptive, consistently formatted names.`;
   }
-  return FOLDER_GUIDELINES[projectType];
+  return `${intro}\n\nRecommended folders for this project type:\n${perType}`;
 }
 
 export function buildSystemPrompt(params: {
@@ -96,7 +69,7 @@ When the author gives you unstructured ideas, organize them into appropriate ent
 
 You have access to these tools:
 - read_entity: Read the full content of an entity by ID. Use this to inspect content before making changes or when you need specific details.
-- create_entity: Create a new project entity (character, chapter, outline, note, world_building, folder, or custom)
+- create_entity: Create a new project entity (character, chapter, outline, note, world_building, folder, or custom). Every entity must be placed under root="canon", "manuscript", or "unsorted" — see File Organization below
 - update_entity: Update an existing entity's content. Always read_entity first to understand what you're changing (unless the content is already shown below).
 - delete_entity: Delete an entity from the project. Only when the user explicitly asks.
 

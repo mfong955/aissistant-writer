@@ -11,6 +11,7 @@ import { createEntity, updateEntity, deleteEntity } from "@/lib/api/entities";
 import { TreeNode } from "./tree-node";
 import { CreateEntityDialog } from "./create-entity-dialog";
 import { EntityIcon } from "./entity-icon";
+import { explorerRootKeyFromEntity } from "@/lib/entity-roots";
 import type { EntityType } from "@/types/database";
 
 interface PendingRename {
@@ -64,6 +65,11 @@ export function ProjectExplorer({
 
   const instructionsEntity = useMemo(
     () => entities.find((e) => e.name === "AI Instructions" && e.parent_id === null),
+    [entities]
+  );
+
+  const unsortedRoot = useMemo(
+    () => entities.find((e) => explorerRootKeyFromEntity(e) === "unsorted"),
     [entities]
   );
 
@@ -212,7 +218,10 @@ export function ProjectExplorer({
   }
 
   function handleCreateRoot() {
-    setCreateParentId(null);
+    // New entities can't live at true top level — default into Unsorted, the safe
+    // catch-all root (docs/onboarding-workflows.md §1).
+    if (!unsortedRoot) return;
+    setCreateParentId(unsortedRoot.id);
     setShowCreate(true);
   }
 
@@ -309,20 +318,23 @@ export function ProjectExplorer({
             />
           ))
         )}
-        {/* Root-level drop zone — drag a file here to move it out of any folder */}
-        <div
-          className="mx-1 mt-1 rounded-sm border border-dashed border-transparent py-2 text-center text-[10px] text-transparent transition-colors hover:border-border hover:text-muted-foreground"
-          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/40", "text-muted-foreground"); }}
-          onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground"); }}
-          onDrop={(e) => {
-            e.preventDefault();
-            e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground");
-            const draggedId = e.dataTransfer.getData("text/plain");
-            if (draggedId) handleMove(draggedId, null);
-          }}
-        >
-          Drop here to move to root
-        </div>
+        {/* Unsorted drop zone — drag a file here to move it out of any folder. Entities can't
+            live outside the three fixed roots, so this targets Unsorted rather than true root. */}
+        {unsortedRoot && (
+          <div
+            className="mx-1 mt-1 rounded-sm border border-dashed border-transparent py-2 text-center text-[10px] text-transparent transition-colors hover:border-border hover:text-muted-foreground"
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/40", "text-muted-foreground"); }}
+            onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground"); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.currentTarget.classList.remove("border-primary/40", "text-muted-foreground");
+              const draggedId = e.dataTransfer.getData("text/plain");
+              if (draggedId && draggedId !== unsortedRoot.id) handleMove(draggedId, unsortedRoot.id);
+            }}
+          >
+            Drop here to move to Unsorted
+          </div>
+        )}
       </div>
       {showCreate && (
         <CreateEntityDialog

@@ -12,6 +12,9 @@ import {
   ScrollText,
   ListChecks,
   ImageIcon,
+  Library,
+  NotebookPen,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EntityType } from "@/types/database";
@@ -55,6 +58,16 @@ export function EntityIcon({
   }
   if (name === "AI Instructions") {
     return <Sparkles className={cn("text-purple-500", className)} />;
+  }
+  // The three fixed explorer roots (docs/onboarding-workflows.md §1)
+  if (name === "Canon") {
+    return <Library className={cn("text-sky-500", className)} />;
+  }
+  if (name === "Manuscript") {
+    return <NotebookPen className={cn("text-amber-500", className)} />;
+  }
+  if (name === "Unsorted") {
+    return <Inbox className={cn("text-stone-400", className)} />;
   }
   if (name === "Logs") {
     return isOpen

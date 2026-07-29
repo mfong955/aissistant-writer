@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/get-user-id";
 import { dbGetProject, dbUpdateProject, dbDeleteProject } from "@/lib/db/projects";
-import { initProjectFolders } from "@/lib/db/entities";
+import { ensureExplorerRoots } from "@/lib/db/entities";
 
 export async function GET(
   _request: Request,
@@ -27,7 +27,7 @@ export async function PATCH(
   const project = await dbUpdateProject(id, userId, updates);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (updates.project_type) {
-    await initProjectFolders(id, userId, project.project_type);
+    await ensureExplorerRoots(id, userId, project.project_type);
   }
   return NextResponse.json({ project });
 }

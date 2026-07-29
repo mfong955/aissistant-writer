@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { EntityIcon } from "./entity-icon";
 import type { TreeNode as TreeNodeType } from "@/types";
 import { Button } from "@/components/ui/button";
+import { isExplorerRootEntity } from "@/lib/entity-roots";
 
 interface TreeNodeProps {
   node: TreeNodeType;
@@ -33,6 +34,9 @@ export function TreeNode({
   const rowRef = useRef<HTMLDivElement>(null);
   const isFolder = node.entity.type === "folder";
   const isSelected = node.entity.id === selectedId;
+  // Canon / Manuscript / Unsorted are fixed containers: can't be renamed, deleted, dragged,
+  // or reparented — see docs/onboarding-workflows.md §1.
+  const isRoot = isExplorerRootEntity(node.entity);
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -50,6 +54,7 @@ export function TreeNode({
   }, [contextMenu]);
 
   function handleDoubleClick() {
+    if (isRoot) return;
     setEditing(true);
     setEditName(node.entity.name);
   }
@@ -77,12 +82,16 @@ export function TreeNode({
   }
 
   function handleDragStart(e: React.DragEvent) {
+    if (isRoot) { e.preventDefault(); return; }
     e.stopPropagation();
     e.dataTransfer.setData("text/plain", node.entity.id);
     e.dataTransfer.effectAllowed = "move";
   }
 
   function getDropPosition(e: React.DragEvent): "before" | "after" | "into" {
+    // Roots are the only valid top-level siblings, so anything dropped on a root always
+    // goes inside it rather than reordering alongside Canon/Manuscript/Unsorted.
+    if (isRoot) return "into";
     const rect = rowRef.current?.getBoundingClientRect();
     if (!rect) return "into";
     const relY = e.clientY - rect.top;
@@ -135,7 +144,7 @@ export function TreeNode({
 
       <div
         ref={rowRef}
-        draggable
+        draggable={!isRoot}
         className={cn(
           "group flex items-center gap-1 rounded-sm px-1 py-0.5 text-sm hover:bg-accent",
           isSelected && "bg-accent",
@@ -181,14 +190,18 @@ export function TreeNode({
               <MessageSquarePlus className="h-3 w-3" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-5 w-5"
-            onClick={(e) => { e.stopPropagation(); handleDoubleClick(); }} title="Rename">
-            <Pencil className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-5 w-5"
-            onClick={(e) => { e.stopPropagation(); onDelete(node.entity.id); }} title="Delete">
-            <Trash2 className="h-3 w-3" />
-          </Button>
+          {!isRoot && (
+            <>
+              <Button variant="ghost" size="icon" className="h-5 w-5"
+                onClick={(e) => { e.stopPropagation(); handleDoubleClick(); }} title="Rename">
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-5 w-5"
+                onClick={(e) => { e.stopPropagation(); onDelete(node.entity.id); }} title="Delete">
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -211,14 +224,20 @@ export function TreeNode({
                 <div className="my-1 border-t" />
               </>
             )}
-            <button className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={() => { handleDoubleClick(); setContextMenu(null); }}>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />Rename
-            </button>
-            <button className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-accent"
-              onClick={() => { onDelete(node.entity.id); setContextMenu(null); }}>
-              <Trash2 className="h-3.5 w-3.5" />Delete
-            </button>
+            {isRoot ? (
+              <span className="block px-3 py-1.5 text-xs text-muted-foreground">Fixed container — can&apos;t be renamed or deleted</span>
+            ) : (
+              <>
+                <button className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => { handleDoubleClick(); setContextMenu(null); }}>
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />Rename
+                </button>
+                <button className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-accent"
+                  onClick={() => { onDelete(node.entity.id); setContextMenu(null); }}>
+                  <Trash2 className="h-3.5 w-3.5" />Delete
+                </button>
+              </>
+            )}
           </div>
         </>,
         document.body
