@@ -11,32 +11,39 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
+// Credits are denominated in tenths of a cent (see src/lib/billing/credits.ts), so a
+// pack grants priceCents * 10 credits and the dollar amount you pay is the dollar amount
+// of balance you receive. Usage is then deducted at the AI provider's actual cost plus
+// a 20% markup, which is what covers Stripe's fee — that markup is disclosed in the UI.
+//
+// Packs start at $5 because Stripe takes 2.9% + $0.30, which is 8.9% of a $5 charge.
+// Smaller top-ups lose money on processing alone.
 export const CREDIT_PACKS = [
   {
     id: "starter",
     name: "Starter",
-    credits: 50,
+    credits: 5000,
     priceCents: 500,
     priceLabel: "$5",
-    description: "50 AI messages",
+    description: "$5 of AI usage",
     popular: false,
   },
   {
     id: "standard",
     name: "Standard",
-    credits: 200,
+    credits: 15000,
     priceCents: 1500,
     priceLabel: "$15",
-    description: "200 AI messages",
+    description: "$15 of AI usage",
     popular: true,
   },
   {
     id: "power",
     name: "Power Pack",
-    credits: 500,
+    credits: 30000,
     priceCents: 3000,
     priceLabel: "$30",
-    description: "500 AI messages",
+    description: "$30 of AI usage",
     popular: false,
   },
 ] as const;

@@ -5,7 +5,13 @@ import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
 import { entityTools, executeToolCall } from "@/lib/openrouter/tools";
 import { buildContext } from "@/lib/context/context-builder";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
-import { dbDeductCredit } from "@/lib/db/billing";
+import { dbGetCredits, dbDeductCredits } from "@/lib/db/billing";
+import {
+  MIN_BALANCE_TO_START,
+  MAX_COST_PER_MESSAGE_USD,
+  usdToCredits,
+  formatCredits,
+} from "@/lib/billing/credits";
 import type { ChatCompletionMessage, StreamChunk, ToolCallResponse } from "@/lib/openrouter/types";
 
 export async function POST(request: Request) {
@@ -31,16 +37,17 @@ export async function POST(request: Request) {
 
   const settings = await dbGetUserSettings(userId);
   let apiKey: string;
+  let usesCredits = false;
 
   if (settings?.openrouter_api_key_encrypted) {
-    // BYOK path: use user's own key, no credit deduction
+    // BYOK path: user's own key, billed by their provider. No credit accounting at all.
     try {
       apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
     } catch {
       return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
     }
   } else {
-    // Credits path: deduct 1 credit and use the system key
+    // Credits path: system key, charged at actual usage after the response completes.
     const systemKey = process.env.OPENROUTER_SYSTEM_API_KEY;
     if (!systemKey) {
       return new Response(
@@ -48,14 +55,21 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const deducted = await dbDeductCredit(userId);
-    if (!deducted) {
+
+    // Pre-flight floor. Cost isn't known until the generation finishes, so this is what
+    // prevents a nearly-empty balance from going deeply negative on one expensive message.
+    const balance = await dbGetCredits(userId);
+    if (balance < MIN_BALANCE_TO_START) {
       return new Response(
-        JSON.stringify({ error: "insufficient_credits", message: "You're out of AI credits. Buy more in Settings." }),
+        JSON.stringify({
+          error: "insufficient_credits",
+          message: `Your balance is ${formatCredits(balance)}, which is too low to start a message. Add credits in Settings, or connect your own OpenRouter key to use the app for free.`,
+        }),
         { status: 402 }
       );
     }
     apiKey = systemKey;
+    usesCredits = true;
   }
 
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
@@ -90,7 +104,7 @@ export async function POST(request: Request) {
       );
 
       try {
-        await processChat({
+        const { costUsd } = await processChat({
           apiKey,
           messages: fullMessages,
           modelId: model_id,
@@ -98,7 +112,18 @@ export async function POST(request: Request) {
           userId,
           controller,
           encoder,
+          usesCredits,
         });
+
+        if (usesCredits) {
+          const credits = usdToCredits(costUsd);
+          const remaining = await dbDeductCredits(userId, credits, `AI message (${model_id})`);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "balance", credits, remaining })}\n\n`
+            )
+          );
+        }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         controller.enqueue(
@@ -128,8 +153,13 @@ async function processChat(params: {
   userId: string;
   controller: ReadableStreamDefaultController;
   encoder: TextEncoder;
-}) {
-  const { apiKey, messages, modelId, projectId, userId, controller, encoder } = params;
+  usesCredits: boolean;
+}): Promise<{ costUsd: number }> {
+  const { apiKey, messages, modelId, projectId, userId, controller, encoder, usesCredits } = params;
+
+  // Summed across the initial generation and the post-tool-call follow-up. Present only
+  // because the request sets `usage: { include: true }`.
+  let costUsd = 0;
 
   const rawStream = await chatCompletion({
     apiKey,
@@ -177,6 +207,7 @@ async function processChat(params: {
 
     if (chunk.usage) {
       usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
+      costUsd += chunk.usage.cost ?? 0;
     }
   }
 
@@ -237,6 +268,21 @@ async function processChat(params: {
       ),
     ];
 
+    // Circuit breaker. The tool results are already applied and streamed to the client;
+    // what's skipped is only the model's closing summary of what it did. This never
+    // truncates a generation in flight — it declines to start an additional one.
+    if (usesCredits && costUsd >= MAX_COST_PER_MESSAGE_USD) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            type: "notice",
+            message: `This message reached the ${formatCredits(usdToCredits(MAX_COST_PER_MESSAGE_USD))} per-message ceiling. Your changes were applied, but the AI's follow-up summary was skipped. A smaller context or a cheaper model will avoid this.`,
+          })}\n\n`
+        )
+      );
+      return { costUsd };
+    }
+
     const followUpStream = await chatCompletion({ apiKey, messages: toolCallMessages, model: modelId, stream: true });
     const followUpParsed = parseSSEStream(followUpStream);
     const followUpReader = followUpParsed.getReader();
@@ -261,13 +307,16 @@ async function processChat(params: {
         } else {
           usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
         }
+        costUsd += chunk.usage.cost ?? 0;
       }
     }
   }
 
   if (usage) {
     controller.enqueue(
-      encoder.encode(`data: ${JSON.stringify({ type: "usage", ...usage })}\n\n`)
+      encoder.encode(`data: ${JSON.stringify({ type: "usage", ...usage, cost: costUsd })}\n\n`)
     );
   }
+
+  return { costUsd };
 }

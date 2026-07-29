@@ -43,8 +43,11 @@ export function PurchaseDialog({ onClose }: Props) {
       <div className="w-full max-w-lg rounded-2xl bg-background p-6 shadow-xl">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Buy AI credits</h2>
-            <p className="text-sm text-muted-foreground">1 credit = 1 AI message</p>
+            <h2 className="text-lg font-semibold">Add AI credit</h2>
+            <p className="text-sm text-muted-foreground">
+              You&rsquo;re charged what the AI actually costs, plus 20% to cover payment
+              processing. Bring your own OpenRouter key instead and you pay us nothing.
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -89,9 +92,7 @@ export function PurchaseDialog({ onClose }: Props) {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <p className="font-semibold">{pack.priceLabel}</p>
-                    <p className="text-xs text-muted-foreground">
-                      ${(pack.priceCents / pack.credits / 100).toFixed(3)}/msg
-                    </p>
+                    <p className="text-xs text-muted-foreground">no expiry</p>
                   </div>
                   {selected === pack.id && (
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">

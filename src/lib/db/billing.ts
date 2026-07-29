@@ -33,15 +33,26 @@ export async function dbAddCredits(
   if (error) throw new Error(`Failed to add credits: ${error.message}`);
 }
 
-// Returns true if a credit was deducted, false if balance was 0.
-export async function dbDeductCredit(userId: string): Promise<boolean> {
-  const supabase = getAdminClient();
-  const { data, error } = await supabase.rpc("deduct_credit", {
-    p_user_id: userId,
-  }) as unknown as { data: boolean; error: { message: string } | null };
+// Deducts usage-proportional credits after an AI call completes and returns the
+// resulting balance. The balance may go negative — the cost is already incurred by the
+// time this runs, so refusing here would mean absorbing it. MIN_BALANCE_TO_START keeps
+// the shortfall to at most one message's worth.
+export async function dbDeductCredits(
+  userId: string,
+  amount: number,
+  description?: string
+): Promise<number> {
+  if (amount <= 0) return dbGetCredits(userId);
 
-  if (error) throw new Error(`Failed to deduct credit: ${error.message}`);
-  return data === true;
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.rpc("deduct_credits", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_description: description ?? null,
+  }) as unknown as { data: number; error: { message: string } | null };
+
+  if (error) throw new Error(`Failed to deduct credits: ${error.message}`);
+  return data;
 }
 
 export type CreditTransaction = {

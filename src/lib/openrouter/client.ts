@@ -37,6 +37,7 @@ export async function chatCompletion(params: {
     messages: params.messages,
     stream: params.stream ?? true,
     max_tokens: params.maxTokens,
+    usage: { include: true },
   };
 
   if (params.tools && params.tools.length > 0) {

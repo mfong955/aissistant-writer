@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/get-user-id";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { decryptApiKey } from "@/lib/encryption";
-import { dbDeductCredit } from "@/lib/db/billing";
+import { dbGetCredits, dbDeductCredits } from "@/lib/db/billing";
+import { MIN_BALANCE_TO_START, usdToCredits, formatCredits } from "@/lib/billing/credits";
 import { buildContext } from "@/lib/context/context-builder";
 import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
 import type { ChatCompletionMessage, StreamChunk } from "@/lib/openrouter/types";
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   // Resolve API key — same BYOK / credits logic as chat route
   const settings = await dbGetUserSettings(userId);
   let apiKey: string;
+  let usesCredits = false;
 
   if (settings?.openrouter_api_key_encrypted) {
     try {
@@ -58,14 +60,20 @@ export async function POST(request: Request) {
     if (!systemKey) {
       return new Response(JSON.stringify({ error: "No API key configured" }), { status: 400 });
     }
-    const deducted = await dbDeductCredit(userId);
-    if (!deducted) {
+
+    // Pre-flight floor; actual cost is deducted after the generation completes.
+    const balance = await dbGetCredits(userId);
+    if (balance < MIN_BALANCE_TO_START) {
       return new Response(
-        JSON.stringify({ error: "insufficient_credits", message: "Out of AI credits. Buy more in Settings." }),
+        JSON.stringify({
+          error: "insufficient_credits",
+          message: `Your balance is ${formatCredits(balance)}, which is too low to start. Add credits in Settings, or connect your own OpenRouter key to use the app for free.`,
+        }),
         { status: 402 }
       );
     }
     apiKey = systemKey;
+    usesCredits = true;
   }
 
   // Build project context — use selected text as the query for relevance scoring
@@ -99,6 +107,7 @@ You are an inline writing assistant embedded in a text editor. When asked to per
 
         const parsedStream = parseSSEStream(rawStream);
         const reader = parsedStream.getReader();
+        let costUsd = 0;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -109,6 +118,13 @@ You are an inline writing assistant embedded in a text editor. When asked to per
           if (content) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
           }
+          if (chunk.usage) {
+            costUsd += chunk.usage.cost ?? 0;
+          }
+        }
+
+        if (usesCredits) {
+          await dbDeductCredits(userId, usdToCredits(costUsd), `Inline action: ${action}`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";

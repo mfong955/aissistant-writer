@@ -46,6 +46,9 @@ export interface ChatCompletionRequest {
   tools?: ToolDefinition[];
   stream?: boolean;
   max_tokens?: number;
+  // Asks OpenRouter to return token counts and actual cost in the final chunk.
+  // Without this, `usage.cost` is absent and credit deduction cannot be usage-proportional.
+  usage?: { include: boolean };
 }
 
 export interface StreamDelta {
@@ -73,6 +76,9 @@ export interface StreamChunk {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    // USD charged by OpenRouter for this generation. Present only when the
+    // request set `usage: { include: true }`.
+    cost?: number;
   };
 }
 
