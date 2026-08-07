@@ -51,3 +51,11 @@ export function creditsToUsd(credits: number): number {
 export function formatCredits(credits: number): string {
   return `$${creditsToUsd(credits).toFixed(2)}`;
 }
+
+/**
+ * Whether the credits (non-BYOK) path is live at all. False under the current BYOK-only
+ * launch posture, since `OPENROUTER_SYSTEM_API_KEY` is left unset — see AGENTS.md Status.
+ */
+export function creditsEnabled(): boolean {
+  return !!process.env.OPENROUTER_SYSTEM_API_KEY;
+}

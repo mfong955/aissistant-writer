@@ -69,7 +69,7 @@ Deployed as a **hosted Supabase-backed web app** (Vercel). Build passes.
 - **Supabase data layer** (`src/lib/db/`) — Postgres with RLS, three migrations in `supabase/`
 - **Supabase auth** — login, signup, OAuth callback, middleware-protected routes
 - **Two-track AI access** — `src/app/api/openrouter/chat/route.ts` already branches: user's own key (no deduction) or system key (deduct credit)
-- **Stripe credits** — wallet, transaction ledger, webhook with idempotency guard, purchase dialog
+- **Stripe credits** — wallet, transaction ledger, webhook with idempotency guard, purchase dialog, gated behind `creditsEnabled()` (`src/lib/billing/credits.ts`) so `BillingCard` and `/api/billing/checkout` are both inert — not just hidden client-side — while `OPENROUTER_SYSTEM_API_KEY` is unset
 - **Canon / Manuscript / Unsorted explorer roots** (`src/lib/entity-roots.ts`, `src/lib/db/entities.ts`'s `ensureExplorerRoots`) — three permanent top-level folders seeded for every project, tagged via `properties._reserved` and enforced at the application layer (API routes + AI tool execution refuse to rename/delete/reparent them; the explorer UI hides those controls for them too). The novel Canon skeleton (Characters, Settings, Timeline, Rules) matches the spec exactly; the other six project types' Canon/Manuscript/Unsorted folder assignments in `src/lib/templates.ts` are a best-effort mapping of the prior flat template set, not spec'd — expect to revise once real imports inform the taxonomy (docs/onboarding-workflows.md §7). The `create_entity` AI tool now takes a closed `root` enum plus an optional `path` instead of a free-text `parent_id`. `context-builder.ts` includes all Canon summaries by lookup; Manuscript and Unsorted stay relevance-scored. Any pre-existing top-level entities from before this change (created via the old flat `initProjectFolders`) are not migrated into a root — none are expected to exist outside Matthew's own test data.
 - Landing page, project templates, OG meta tags, custom 404, steel-blue brand palette
 - Electron shell (`electron/`, `npm run electron:dev`)
@@ -79,7 +79,6 @@ Deployed as a **hosted Supabase-backed web app** (Vercel). Build passes.
 **Known problems:**
 - **Migration `004_usage_based_credits.sql` has not been applied to Supabase.** The code calls `deduct_credits(user_id, amount, description)`, which does not exist in the database until the migration runs. Harmless while the system key is unset, since that path never executes — but it must be applied before credits are ever switched on.
 - **Existing credit balances are in the old unit.** Any pre-migration balance is denominated in messages, not tenths of a cent — 50 credits becomes $0.05. Moot with no real users; zero or re-grant balances if that changes.
-- **Billing UI is still reachable while credits are disabled.** Settings surfaces a purchase dialog that leads nowhere useful under BYOK-only. Gate it on whether the system key is configured.
 - **No pre-flight cost estimate.** `MIN_BALANCE_TO_START` is a flat floor; the app cannot yet tell a user "this message will cost about $0.40" before they send it. Requires per-model pricing from OpenRouter's models endpoint.
 - **README.md is still the unmodified starter-template README.** It describes the AGENTS.md scaffold, not this product. It is the first thing a GitHub visitor sees.
 
@@ -92,12 +91,11 @@ npm run dev
 Requires a Supabase project with the migrations in `supabase/migrations/` applied, and `ENCRYPTION_KEY` set before any user stores an API key. `OPENROUTER_SYSTEM_API_KEY` and the Stripe variables are optional — leaving the OpenRouter system key unset disables the credits path and makes the app BYOK-only.
 
 **What's next:**
-1. **Gate the billing UI** on `OPENROUTER_SYSTEM_API_KEY` being set, so BYOK-only users never see a purchase flow
-2. **Cold-start onboarding** — three entry points (nothing yet / a seed / an existing pile) feeding a non-binding workflow chooser
-3. **BYOK activation path** — reduce the copy-paste-a-key barrier; verify whether OpenRouter's OAuth PKCE connect flow can replace manual key entry
-4. **Import staging** — never auto-file an import; propose, let the writer accept/edit/reject per item
-5. Rewrite README.md for the actual product
-6. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
+1. **Cold-start onboarding** — three entry points (nothing yet / a seed / an existing pile) feeding a non-binding workflow chooser
+2. **BYOK activation path** — reduce the copy-paste-a-key barrier; verify whether OpenRouter's OAuth PKCE connect flow can replace manual key entry
+3. **Import staging** — never auto-file an import; propose, let the writer accept/edit/reject per item
+4. Rewrite README.md for the actual product
+5. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
 
 **Open design question — rewrites and restarts:**
 Importing an existing project is a primary entry point, which means the writer must be able to continue forward, rework parts, or strip it down and start over. The constraint is psychological before it is technical: writers do not delete drafts, because deleting feels like killing. The working direction is that nothing is ever destroyed, only re-shelved — separating durable *canon* (characters, settings, timeline, rules) from disposable *manuscript* (scenes, chapters), and treating structural changes as AI-generated **impact reports** the writer works through item by item, never as automatic propagation across the manuscript. Not yet decided; do not implement without confirming with Matthew.

@@ -10,10 +10,17 @@ import type { CreditTransaction } from "@/lib/db/billing";
 
 export function BillingCard() {
   const searchParams = useSearchParams();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [showPurchase, setShowPurchase] = useState(false);
   const [notification, setNotification] = useState<{ text: string; kind: "ok" | "info" } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/billing/status")
+      .then((r) => r.json())
+      .then((data: { enabled: boolean }) => setEnabled(data.enabled));
+  }, []);
 
   useEffect(() => {
     const billing = searchParams.get("billing");
@@ -61,6 +68,8 @@ export function BillingCard() {
       fetchData();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!enabled) return null;
 
   return (
     <>

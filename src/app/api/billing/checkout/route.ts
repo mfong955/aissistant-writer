@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/get-user-id";
 import { getStripe, getCreditPack } from "@/lib/stripe";
+import { creditsEnabled } from "@/lib/billing/credits";
 
 export async function POST(request: Request) {
+  if (!creditsEnabled()) {
+    return NextResponse.json({ error: "Credits are not enabled on this deployment" }, { status: 400 });
+  }
+
   const userIdOrError = await getUserId();
   if (userIdOrError instanceof NextResponse) return userIdOrError;
   const userId = userIdOrError;
