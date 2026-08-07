@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tiptapToMarkdown, textToTiptapJson } from "@/lib/tiptap-utils";
+import type { TextEdit } from "@/lib/markdown-toolbar-actions";
 import { AIToolbar, type AIAction } from "./ai-toolbar";
+import { MarkdownToolbar } from "./markdown-toolbar";
 
 interface MarkdownEditorProps {
   content: Record<string, unknown> | null;
@@ -141,6 +143,31 @@ export function MarkdownEditor({
     [onUpdate, onMarkdownChange]
   );
 
+  // Toolbar edits are string transforms on the raw markdown, not editor commands (this is a
+  // plain textarea, not a WYSIWYG surface) — apply them the same way typing does, then restore
+  // focus/selection since the DOM update happens async on the next render.
+  const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
+
+  const applyToolbarEdit = useCallback(
+    (edit: TextEdit) => {
+      setMarkdown(edit.text);
+      onUpdate(textToTiptapJson(edit.text));
+      onMarkdownChange?.(edit.text);
+      pendingSelectionRef.current = { start: edit.selectionStart, end: edit.selectionEnd };
+    },
+    [onUpdate, onMarkdownChange]
+  );
+
+  useEffect(() => {
+    if (pendingSelectionRef.current && textareaRef.current) {
+      const { start, end } = pendingSelectionRef.current;
+      pendingSelectionRef.current = null;
+      const ta = textareaRef.current;
+      ta.focus();
+      ta.setSelectionRange(start, end);
+    }
+  }, [markdown]);
+
   function checkSelection() {
     if (aiStatus === "loading") return;
     const ta = textareaRef.current;
@@ -240,59 +267,66 @@ export function MarkdownEditor({
   });
 
   return (
-    <div className="relative h-full">
-      {/* Find match scroll markers */}
-      {hasFind && markerPositions.length > 0 && (
-        <div className="pointer-events-none absolute right-0 top-0 z-20 h-full w-1.5">
-          {markerPositions.map((pct, i) => (
-            <div
-              key={i}
-              className={`absolute left-0 right-0 h-1 rounded-full ${
-                i === currentMatchIdx ? "bg-orange-400" : "bg-yellow-400/70"
-              }`}
-              style={{ top: `${pct}%` }}
+    <div className="flex h-full flex-col">
+      <MarkdownToolbar
+        textareaRef={textareaRef}
+        getText={() => markdownRef.current}
+        onApply={applyToolbarEdit}
+      />
+      <div className="relative flex-1 overflow-hidden">
+        {/* Find match scroll markers */}
+        {hasFind && markerPositions.length > 0 && (
+          <div className="pointer-events-none absolute right-0 top-0 z-20 h-full w-1.5">
+            {markerPositions.map((pct, i) => (
+              <div
+                key={i}
+                className={`absolute left-0 right-0 h-1 rounded-full ${
+                  i === currentMatchIdx ? "bg-orange-400" : "bg-yellow-400/70"
+                }`}
+                style={{ top: `${pct}%` }}
+              />
+            ))}
+          </div>
+        )}
+
+        <div ref={scrollContainerRef} className="h-full overflow-auto px-8 py-6">
+          <div className="relative mx-auto w-full max-w-[720px]">
+            {/* Find highlight overlay */}
+            {hasFind && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 font-mono text-sm leading-relaxed"
+                style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: "transparent" }}
+              >
+                {renderHighlighted(markdown, findQuery, currentMatchIdx)}
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              className="find-target relative block min-h-[calc(100vh-12rem)] w-full resize-none bg-transparent font-mono text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+              value={markdown}
+              onChange={handleChange}
+              onMouseUp={checkSelection}
+              placeholder="Start writing... (use # for headings, **bold**, *italic*, - for lists)"
+              spellCheck
+              disabled={aiStatus === "loading"}
             />
-          ))}
+          </div>
         </div>
-      )}
 
-      <div ref={scrollContainerRef} className="h-full overflow-auto px-8 py-6">
-        <div className="relative mx-auto w-full max-w-[720px]">
-          {/* Find highlight overlay */}
-          {hasFind && (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 font-mono text-sm leading-relaxed"
-              style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: "transparent" }}
-            >
-              {renderHighlighted(markdown, findQuery, currentMatchIdx)}
-            </div>
-          )}
-
-          <textarea
-            ref={textareaRef}
-            className="find-target relative block min-h-[calc(100vh-12rem)] w-full resize-none bg-transparent font-mono text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
-            value={markdown}
-            onChange={handleChange}
-            onMouseUp={checkSelection}
-            placeholder="Start writing... (use # for headings, **bold**, *italic*, - for lists)"
-            spellCheck
-            disabled={aiStatus === "loading"}
-          />
-        </div>
+        {/* AI floating toolbar */}
+        {toolbar && projectId && (
+          <div data-ai-toolbar>
+            <AIToolbar
+              x={toolbar.x}
+              y={toolbar.y}
+              status={aiStatus}
+              onAction={handleAIAction}
+            />
+          </div>
+        )}
       </div>
-
-      {/* AI floating toolbar */}
-      {toolbar && projectId && (
-        <div data-ai-toolbar>
-          <AIToolbar
-            x={toolbar.x}
-            y={toolbar.y}
-            status={aiStatus}
-            onAction={handleAIAction}
-          />
-        </div>
-      )}
     </div>
   );
 }
