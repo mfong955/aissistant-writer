@@ -21,7 +21,7 @@ function Nav() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
           <PenLine className="h-5 w-5 text-primary" />
-          <span className="font-semibold">Aissistant Writer</span>
+          <span className="font-semibold">Smartaiss</span>
         </Link>
         <div className="flex items-center gap-3">
           <Link
@@ -62,7 +62,7 @@ function Hero() {
         </h1>
 
         <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-          Aissistant Writer brings an AI assistant into your creative workflow — one that reads your
+          Smartaiss brings an AI assistant into your creative workflow — one that reads your
           characters, chapters, and notes so you never have to repeat yourself.
         </p>
 
@@ -299,7 +299,7 @@ function CTA() {
           Ready to write something great?
         </h2>
         <p className="mt-4 text-muted-foreground">
-          Join writers who use Aissistant to keep their projects organized and their
+          Join writers who use Smartaiss to keep their projects organized and their
           AI assistant in context.
         </p>
         <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
@@ -323,7 +323,7 @@ function Footer() {
         <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <PenLine className="h-4 w-4" />
-            <span>Aissistant Writer</span>
+            <span>Smartaiss</span>
           </div>
           <div className="flex gap-6 text-sm text-muted-foreground">
             <Link href="/login" className="hover:text-foreground">
@@ -335,7 +335,7 @@ function Footer() {
           </div>
         </div>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Aissistant Writer. All rights reserved.
+          © {new Date().getFullYear()} Smartaiss. All rights reserved.
         </p>
       </div>
     </footer>

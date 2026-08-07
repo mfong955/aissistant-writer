@@ -20,7 +20,7 @@ web
 
 ## Product Purpose
 
-Aissistant Writer is an AI writing studio for long-form projects. It gives writers a persistent, project-aware AI partner that has read everything in their world — characters, chapters, settings, notes — so conversations stay grounded and never need re-explanation. The core value is the elimination of the context problem: you build the project once, the AI knows it forever.
+Smartaiss is an AI writing studio for long-form projects. It gives writers a persistent, project-aware AI partner that has read everything in their world — characters, chapters, settings, notes — so conversations stay grounded and never need re-explanation. The core value is the elimination of the context problem: you build the project once, the AI knows it forever.
 
 Success looks like a writer finishing a long project they would have abandoned — because the AI kept pace.
 
@@ -36,7 +36,7 @@ An AI partner that knows your story, helps with ideas, and organizes everything 
 - **Belief ladder**:
   1. Generic AI tools forget your project the moment you close the tab
   2. Re-pasting context every session is why writers give up on AI
-  3. Aissistant is built differently — it reads your project and holds the whole story
+  3. Smartaiss is built differently — it reads your project and holds the whole story
   4. You can ask it anything and get a contextually grounded answer
   5. This is the writing environment worth investing time in
 - **Proof on hand**: None committed yet. When available, prioritize testimonials from writers mid-project, not pre-launch blurbs.

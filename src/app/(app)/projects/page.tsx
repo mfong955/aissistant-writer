@@ -136,7 +136,7 @@ export default function DashboardPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Aissistant Writer</h1>
+          <h1 className="text-2xl font-bold">Smartaiss</h1>
           <p className="text-muted-foreground">Your writing projects</p>
         </div>
         <Button onClick={startCreate}>

@@ -14,7 +14,7 @@
     "electron:pack": "ELECTRON_BUILD=true next build && node electron/prepare-build.js && electron-builder --dir"
   },
   "build": {
-    "productName": "Aissistant Writer",
+    "productName": "Smartaiss",
     "appId": "com.mwfong.aissistant-writer",
     "copyright": "Copyright © 2026",
     "directories": {

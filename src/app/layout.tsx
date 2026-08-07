@@ -13,20 +13,20 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: {
-    default: "Aissistant Writer",
-    template: "%s — Aissistant Writer",
+    default: "Smartaiss",
+    template: "%s — Smartaiss",
   },
   description: DESCRIPTION,
   openGraph: {
     type: "website",
-    siteName: "Aissistant Writer",
-    title: "Aissistant Writer — AI writing assistant that knows your story",
+    siteName: "Smartaiss",
+    title: "Smartaiss — AI writing assistant that knows your story",
     description: DESCRIPTION,
     url: APP_URL,
   },
   twitter: {
     card: "summary",
-    title: "Aissistant Writer — AI writing assistant that knows your story",
+    title: "Smartaiss — AI writing assistant that knows your story",
     description: DESCRIPTION,
   },
 };

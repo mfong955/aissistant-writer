@@ -49,8 +49,8 @@ export async function chatCompletion(params: {
     headers: {
       Authorization: `Bearer ${params.apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://aissistant-writer.app",
-      "X-Title": "Aissistant Writer",
+      "HTTP-Referer": "https://smartaiss.com",
+      "X-Title": "Smartaiss",
     },
     body: JSON.stringify(body),
   });
@@ -90,8 +90,8 @@ export async function chatCompletionJson(params: {
     headers: {
       Authorization: `Bearer ${params.apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://aissistant-writer.app",
-      "X-Title": "Aissistant Writer",
+      "HTTP-Referer": "https://smartaiss.com",
+      "X-Title": "Smartaiss",
     },
     body: JSON.stringify(body),
   });

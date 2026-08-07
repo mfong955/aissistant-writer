@@ -68,7 +68,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: "Aissistant Writer",
+    title: "Smartaiss",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -100,7 +100,7 @@ async function startProductionServer() {
   if (!nodeBin) {
     dialog.showErrorBox(
       "Node.js not found",
-      "Aissistant Writer requires Node.js to be installed. Please install it from nodejs.org and restart the app."
+      "Smartaiss requires Node.js to be installed. Please install it from nodejs.org and restart the app."
     );
     app.quit();
     return;

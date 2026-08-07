@@ -35,7 +35,7 @@ export async function POST(request: Request) {
           currency: "usd",
           unit_amount: pack.priceCents,
           product_data: {
-            name: `Aissistant Writer — ${pack.name}`,
+            name: `Smartaiss — ${pack.name}`,
             description: pack.description,
           },
         },

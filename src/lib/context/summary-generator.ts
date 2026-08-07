@@ -23,8 +23,8 @@ export async function generateEntitySummary(params: {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://aissistant-writer.app",
-      "X-Title": "Aissistant Writer",
+      "HTTP-Referer": "https://smartaiss.com",
+      "X-Title": "Smartaiss",
     },
     body: JSON.stringify({
       model,
@@ -75,8 +75,8 @@ export async function generateProjectState(params: {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://aissistant-writer.app",
-      "X-Title": "Aissistant Writer",
+      "HTTP-Referer": "https://smartaiss.com",
+      "X-Title": "Smartaiss",
     },
     body: JSON.stringify({
       model,

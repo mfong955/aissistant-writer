@@ -80,7 +80,7 @@ function LoginForm() {
           <PenLine className="h-6 w-6 text-primary" />
         </div>
         <h1 className="text-2xl font-bold">Welcome back</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Sign in to Aissistant Writer</p>
+        <p className="mt-1 text-sm text-muted-foreground">Sign in to Smartaiss</p>
       </div>
 
       {/* URL error (e.g. from OAuth failure) */}
