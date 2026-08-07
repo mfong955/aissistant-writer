@@ -3,7 +3,7 @@ import { marked } from "marked";
 import type { Entity } from "@/types/database";
 import { buildTree, flattenTree } from "./entity-tree";
 
-type TiptapMark = { type: string };
+type TiptapMark = { type: string; attrs?: Record<string, unknown> };
 type TiptapNode = {
   type: string;
   attrs?: Record<string, unknown>;
@@ -85,23 +85,31 @@ export async function exportAsDocx(name: string, content: Record<string, unknown
     Packer,
     Paragraph,
     TextRun,
+    ExternalHyperlink,
     HeadingLevel,
     AlignmentType,
+    ShadingType,
   } = await import("docx");
 
-  function toRuns(nodes: TiptapNode[]) {
-    return nodes.flatMap((node) => {
+  type RunOrLink = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
+
+  function toRuns(nodes: TiptapNode[]): RunOrLink[] {
+    return nodes.flatMap((node): RunOrLink[] => {
       if (node.type === "hardBreak") return [new TextRun({ break: 1 })];
       if (node.type !== "text") return [];
       const marks = node.marks ?? [];
-      return [
-        new TextRun({
-          text: node.text ?? "",
-          bold: marks.some((m) => m.type === "bold"),
-          italics: marks.some((m) => m.type === "italic"),
-          strike: marks.some((m) => m.type === "strike"),
-        }),
-      ];
+      const run = new TextRun({
+        text: node.text ?? "",
+        bold: marks.some((m) => m.type === "bold"),
+        italics: marks.some((m) => m.type === "italic"),
+        strike: marks.some((m) => m.type === "strike"),
+        underline: marks.some((m) => m.type === "underline") ? {} : undefined,
+      });
+      const link = marks.find((m) => m.type === "link");
+      if (link) {
+        return [new ExternalHyperlink({ link: (link.attrs?.href as string | undefined) ?? "", children: [run] })];
+      }
+      return [run];
     });
   }
 
@@ -168,6 +176,17 @@ export async function exportAsDocx(name: string, content: Record<string, unknown
             children: [new TextRun({ text: "* * *", color: "888888" })],
           }),
         ];
+
+      case "codeBlock": {
+        const text = (node.content ?? []).map((c) => c.text ?? "").join("");
+        return text.split("\n").map(
+          (line) =>
+            new Paragraph({
+              shading: { type: ShadingType.CLEAR, color: "auto", fill: "F0F0F0" },
+              children: [new TextRun({ text: line || " ", font: "Courier New", size: 20 })],
+            })
+        );
+      }
 
       default:
         return [];
@@ -265,19 +284,26 @@ export function exportProjectAsPdf(projectName: string, entities: Entity[]) {
 }
 
 export async function exportProjectAsDocx(projectName: string, entities: Entity[]) {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak } = await import("docx");
+  const { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel, AlignmentType, ShadingType, PageBreak } = await import("docx");
 
   const HEADING_LEVELS = [
     HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3,
     HeadingLevel.HEADING_4, HeadingLevel.HEADING_5, HeadingLevel.HEADING_6,
   ] as const;
 
-  function toRuns(nodes: TiptapNode[]) {
-    return nodes.flatMap((node) => {
+  type RunOrLink = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
+
+  function toRuns(nodes: TiptapNode[]): RunOrLink[] {
+    return nodes.flatMap((node): RunOrLink[] => {
       if (node.type === "hardBreak") return [new TextRun({ break: 1 })];
       if (node.type !== "text") return [];
       const marks = node.marks ?? [];
-      return [new TextRun({ text: node.text ?? "", bold: marks.some((m) => m.type === "bold"), italics: marks.some((m) => m.type === "italic"), strike: marks.some((m) => m.type === "strike") })];
+      const run = new TextRun({ text: node.text ?? "", bold: marks.some((m) => m.type === "bold"), italics: marks.some((m) => m.type === "italic"), strike: marks.some((m) => m.type === "strike"), underline: marks.some((m) => m.type === "underline") ? {} : undefined });
+      const link = marks.find((m) => m.type === "link");
+      if (link) {
+        return [new ExternalHyperlink({ link: (link.attrs?.href as string | undefined) ?? "", children: [run] })];
+      }
+      return [run];
     });
   }
 
@@ -297,6 +323,16 @@ export async function exportProjectAsDocx(projectName: string, entities: Entity[
       case "orderedList": return (node.content ?? []).map((item, i) => new Paragraph({ children: [new TextRun({ text: `${i + 1}. ` }), ...listItemRuns(item)] }));
       case "blockquote": return (node.content ?? []).map((child) => new Paragraph({ indent: { left: 720 }, children: [new TextRun({ text: "│ ", color: "888888" }), ...toRuns(child.content ?? [])] }));
       case "horizontalRule": return [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "* * *", color: "888888" })] })];
+      case "codeBlock": {
+        const text = (node.content ?? []).map((c) => c.text ?? "").join("");
+        return text.split("\n").map(
+          (line) =>
+            new Paragraph({
+              shading: { type: ShadingType.CLEAR, color: "auto", fill: "F0F0F0" },
+              children: [new TextRun({ text: line || " ", font: "Courier New", size: 20 })],
+            })
+        );
+      }
       default: return [];
     }
   }

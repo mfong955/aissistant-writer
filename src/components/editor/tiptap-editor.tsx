@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
 
 interface TiptapEditorProps {
   content: Record<string, unknown> | null;
@@ -21,6 +23,12 @@ export function TiptapEditor({
       StarterKit,
       Placeholder.configure({
         placeholder: "Start writing...",
+      }),
+      Underline,
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
       }),
     ],
     content: content || undefined,
@@ -96,6 +104,30 @@ export function TiptapEditor({
         }
         .prose-editor .tiptap li {
           margin-bottom: 0.25em;
+        }
+        .prose-editor .tiptap a {
+          color: var(--primary);
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        .prose-editor .tiptap code {
+          font-family: ui-monospace, monospace;
+          background: var(--muted);
+          padding: 0.15em 0.35em;
+          border-radius: 4px;
+          font-size: 0.9em;
+        }
+        .prose-editor .tiptap pre {
+          background: var(--muted);
+          padding: 0.75em 1em;
+          border-radius: 6px;
+          overflow-x: auto;
+          margin-bottom: 1em;
+        }
+        .prose-editor .tiptap pre code {
+          background: none;
+          padding: 0;
+          font-size: 0.85em;
         }
         .prose-editor .tiptap .is-editor-empty:first-child::before {
           content: attr(data-placeholder);

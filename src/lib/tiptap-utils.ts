@@ -24,24 +24,34 @@ export function replaceTextInTiptapDoc(
   return { doc: walk(doc), changed };
 }
 
-type TiptapMark = { type: string };
+type TiptapMark = { type: string; attrs?: Record<string, unknown> };
 type TiptapNode = { type: string; attrs?: Record<string, unknown>; content?: TiptapNode[]; marks?: TiptapMark[]; text?: string };
 
 /**
- * Parse inline markdown (bold, italic) in a string into Tiptap text nodes.
+ * Parse inline markdown (bold, italic, strike, inline code, links, underline) in a string
+ * into Tiptap text nodes.
  */
 function parseInline(text: string): TiptapNode[] {
   const nodes: TiptapNode[] = [];
-  // Combined regex: **bold**, *italic*, __bold__, _italic_
-  const re = /(\*\*|__)(.*?)\1|(\*|_)(.*?)\3/g;
+  // Combined regex, in priority order: **bold**/__bold__, *italic*/_italic_, ~~strike~~,
+  // `code`, [text](url), <u>underline</u>
+  const re = /(\*\*|__)(.*?)\1|(\*|_)(.*?)\3|~~(.*?)~~|`([^`]*?)`|\[([^\]]*?)\]\(([^)]*?)\)|<u>(.*?)<\/u>/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) nodes.push({ type: "text", text: text.slice(last, m.index) });
     if (m[1]) {
       nodes.push({ type: "text", text: m[2], marks: [{ type: "bold" }] });
-    } else {
+    } else if (m[3]) {
       nodes.push({ type: "text", text: m[4], marks: [{ type: "italic" }] });
+    } else if (m[5] !== undefined) {
+      nodes.push({ type: "text", text: m[5], marks: [{ type: "strike" }] });
+    } else if (m[6] !== undefined) {
+      nodes.push({ type: "text", text: m[6], marks: [{ type: "code" }] });
+    } else if (m[7] !== undefined) {
+      nodes.push({ type: "text", text: m[7], marks: [{ type: "link", attrs: { href: m[8] } }] });
+    } else if (m[9] !== undefined) {
+      nodes.push({ type: "text", text: m[9], marks: [{ type: "underline" }] });
     }
     last = m.index + m[0].length;
   }
@@ -102,6 +112,25 @@ export function textToTiptapJson(text: string): Record<string, unknown> {
       continue;
     }
 
+    // Fenced code block
+    const fenceMatch = /^```(\w*)\s*$/.exec(line.trim());
+    if (fenceMatch) {
+      const language = fenceMatch[1] || null;
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "```") {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing fence
+      content.push({
+        type: "codeBlock",
+        attrs: { language },
+        content: codeLines.length ? [{ type: "text", text: codeLines.join("\n") }] : [],
+      });
+      continue;
+    }
+
     // Horizontal rule
     if (/^---+$/.test(line.trim())) {
       content.push({ type: "horizontalRule" });
@@ -117,7 +146,7 @@ export function textToTiptapJson(text: string): Record<string, unknown> {
 
     // Paragraph: collect non-empty, non-special lines
     const paraLines: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|>\s|[-*]\s|\d+\.\s|---+$)/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|>\s|[-*]\s|\d+\.\s|---+$|```)/.test(lines[i])) {
       paraLines.push(lines[i]);
       i++;
     }
@@ -142,14 +171,23 @@ export function tiptapToMarkdown(content: Record<string, unknown>): string {
       if (node.type !== "text") return "";
       const text = node.text || "";
       const marks = node.marks || [];
-      const hasBold = marks.some((m) => m.type === "bold");
-      const hasItalic = marks.some((m) => m.type === "italic");
       const hasCode = marks.some((m) => m.type === "code");
       if (hasCode) return `\`${text}\``;
-      if (hasBold && hasItalic) return `***${text}***`;
-      if (hasBold) return `**${text}**`;
-      if (hasItalic) return `*${text}*`;
-      return text;
+
+      const hasBold = marks.some((m) => m.type === "bold");
+      const hasItalic = marks.some((m) => m.type === "italic");
+      const hasStrike = marks.some((m) => m.type === "strike");
+      const hasUnderline = marks.some((m) => m.type === "underline");
+      const link = marks.find((m) => m.type === "link");
+
+      let out = text;
+      if (hasBold && hasItalic) out = `***${out}***`;
+      else if (hasBold) out = `**${out}**`;
+      else if (hasItalic) out = `*${out}*`;
+      if (hasStrike) out = `~~${out}~~`;
+      if (hasUnderline) out = `<u>${out}</u>`;
+      if (link) out = `[${out}](${(link.attrs?.href as string | undefined) ?? ""})`;
+      return out;
     }).join("");
   }
 
@@ -192,6 +230,15 @@ export function tiptapToMarkdown(content: Record<string, unknown>): string {
         lines.push("---");
         lines.push("");
         break;
+      case "codeBlock": {
+        const lang = (node.attrs?.language as string | undefined) || "";
+        const text = (node.content || []).map((c) => c.text || "").join("");
+        lines.push("```" + lang);
+        lines.push(text);
+        lines.push("```");
+        lines.push("");
+        break;
+      }
     }
   }
 

@@ -59,7 +59,7 @@ Deployed as a **hosted Supabase-backed web app** (Vercel). Build passes.
 - Project scaffolding (Next.js 15 + React 19 + TypeScript + Tailwind v4 + shadcn/ui)
 - VS Code-like 3-panel layout with allotment (resizable, chat toggleable)
 - Project explorer (tree view, CRUD, rename, type icons)
-- Tiptap editor with tabs, autosave (2s debounce + SHA-256 hash)
+- Tiptap editor with tabs, autosave (2s debounce + SHA-256 hash). Formatting: headings, bold, italic, underline, strike, inline code, code blocks, blockquote, bullet/ordered lists, horizontal rule, links (`@tiptap/extension-underline`, `@tiptap/extension-link`) — first slice of a small→medium→big editor-richness plan; tables and equations/footnotes are the next two tiers, not yet started. All of the above round-trip through markdown, DOCX, and PDF export (`src/lib/tiptap-utils.ts`, `src/lib/export.ts`) — every node/mark type the toolbar can produce is explicitly handled in both DOCX paragraph builders and the markdown converter, since anything missed there silently vanishes from exports rather than erroring
 - Change logging (entity CRUD tracked with actor/timestamp)
 - OpenRouter integration (API key encrypted at rest, model listing, streaming chat, tool calls)
 - AI chat panel (SSE streaming, token/cost tracking, model selector) and inline AI actions on selection
