@@ -118,6 +118,22 @@ export function insertHorizontalRule(text: string, start: number): TextEdit {
   return { text: newText, selectionStart: pos, selectionEnd: pos };
 }
 
+export function insertTable(text: string, start: number): TextEdit {
+  const before = text.slice(0, start);
+  const after = text.slice(start);
+  const openPad = before.length === 0 ? "" : before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+  const closePad = after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
+  const table =
+    "| Header 1 | Header 2 | Header 3 |\n" +
+    "| --- | --- | --- |\n" +
+    "| Cell | Cell | Cell |\n" +
+    "| Cell | Cell | Cell |";
+  const insert = `${openPad}${table}${closePad}`;
+  const newText = before + insert + after;
+  const cellStart = before.length + openPad.length + 2; // just past "| "
+  return { text: newText, selectionStart: cellStart, selectionEnd: cellStart + "Header 1".length };
+}
+
 export function insertLink(text: string, start: number, end: number, url: string): TextEdit {
   const before = text.slice(0, start);
   const after = text.slice(end);

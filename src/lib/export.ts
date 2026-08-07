@@ -65,6 +65,10 @@ export function exportAsPdf(name: string, content: Record<string, unknown> | nul
   code { font-family: monospace; background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; font-size: 10pt; }
   pre { background: #f0f0f0; padding: 1em; border-radius: 4px; overflow-x: auto; margin-bottom: 1em; }
   hr { border: none; border-top: 1px solid #ccc; margin: 2em 0; }
+  a { color: #1a5fb4; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 1em; font-size: 0.95em; }
+  th, td { border: 1px solid #ccc; padding: 0.5em 0.75em; text-align: left; }
+  th { background: #f0f0f0; font-weight: 600; }
   @media print {
     body { padding: 0; }
     @page { margin: 1in; size: letter; }
@@ -89,6 +93,10 @@ export async function exportAsDocx(name: string, content: Record<string, unknown
     HeadingLevel,
     AlignmentType,
     ShadingType,
+    Table,
+    TableRow,
+    TableCell,
+    WidthType,
   } = await import("docx");
 
   type RunOrLink = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
@@ -126,7 +134,14 @@ export async function exportAsDocx(name: string, content: Record<string, unknown
     HeadingLevel.HEADING_6,
   ] as const;
 
-  function toParagraphs(node: TiptapNode): InstanceType<typeof Paragraph>[] {
+  type Block = InstanceType<typeof Paragraph> | InstanceType<typeof Table>;
+
+  function cellParagraphs(cell: TiptapNode): InstanceType<typeof Paragraph>[] {
+    const paras = (cell.content ?? []).map((p) => new Paragraph({ children: toRuns(p.content ?? []) }));
+    return paras.length ? paras : [new Paragraph({})];
+  }
+
+  function toParagraphs(node: TiptapNode): Block[] {
     switch (node.type) {
       case "doc":
         return (node.content ?? []).flatMap(toParagraphs);
@@ -186,6 +201,27 @@ export async function exportAsDocx(name: string, content: Record<string, unknown
               children: [new TextRun({ text: line || " ", font: "Courier New", size: 20 })],
             })
         );
+      }
+
+      case "table": {
+        const rows = node.content ?? [];
+        return [
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: rows.map(
+              (row, rowIdx) =>
+                new TableRow({
+                  children: (row.content ?? []).map(
+                    (cell) =>
+                      new TableCell({
+                        children: cellParagraphs(cell),
+                        shading: rowIdx === 0 ? { fill: "E8E8E8" } : undefined,
+                      })
+                  ),
+                })
+            ),
+          }),
+        ];
       }
 
       default:
@@ -277,6 +313,10 @@ export function exportProjectAsPdf(projectName: string, entities: Entity[]) {
   code { font-family:monospace; background:#f0f0f0; padding:0.1em 0.3em; border-radius:3px; font-size:10pt; }
   pre { background:#f0f0f0; padding:1em; border-radius:4px; overflow-x:auto; margin-bottom:1em; }
   hr { border:none; border-top:1px solid #ccc; margin:2em 0; }
+  a { color:#1a5fb4; }
+  table { border-collapse:collapse; width:100%; margin-bottom:1em; font-size:0.95em; }
+  th, td { border:1px solid #ccc; padding:0.5em 0.75em; text-align:left; }
+  th { background:#f0f0f0; font-weight:600; }
   @media print { body { padding:0; } @page { margin:1in; size:letter; } }
 </style></head><body>${sections}</body></html>`);
   win.document.close();
@@ -284,7 +324,7 @@ export function exportProjectAsPdf(projectName: string, entities: Entity[]) {
 }
 
 export async function exportProjectAsDocx(projectName: string, entities: Entity[]) {
-  const { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel, AlignmentType, ShadingType, PageBreak } = await import("docx");
+  const { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel, AlignmentType, ShadingType, PageBreak, Table, TableRow, TableCell, WidthType } = await import("docx");
 
   const HEADING_LEVELS = [
     HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3,
@@ -311,7 +351,14 @@ export async function exportProjectAsDocx(projectName: string, entities: Entity[
     return (item.content ?? []).flatMap((child) => toRuns(child.content ?? []));
   }
 
-  function toParagraphs(node: TiptapNode): InstanceType<typeof Paragraph>[] {
+  type Block = InstanceType<typeof Paragraph> | InstanceType<typeof Table>;
+
+  function cellParagraphs(cell: TiptapNode): InstanceType<typeof Paragraph>[] {
+    const paras = (cell.content ?? []).map((p) => new Paragraph({ children: toRuns(p.content ?? []) }));
+    return paras.length ? paras : [new Paragraph({})];
+  }
+
+  function toParagraphs(node: TiptapNode): Block[] {
     switch (node.type) {
       case "doc": return (node.content ?? []).flatMap(toParagraphs);
       case "heading": {
@@ -333,6 +380,26 @@ export async function exportProjectAsDocx(projectName: string, entities: Entity[
             })
         );
       }
+      case "table": {
+        const rows = node.content ?? [];
+        return [
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: rows.map(
+              (row, rowIdx) =>
+                new TableRow({
+                  children: (row.content ?? []).map(
+                    (cell) =>
+                      new TableCell({
+                        children: cellParagraphs(cell),
+                        shading: rowIdx === 0 ? { fill: "E8E8E8" } : undefined,
+                      })
+                  ),
+                })
+            ),
+          }),
+        ];
+      }
       default: return [];
     }
   }
@@ -340,7 +407,7 @@ export async function exportProjectAsDocx(projectName: string, entities: Entity[
   const tree = buildTree(entities.filter((e) => e.type !== "image"));
   const ordered = flattenTree(tree).filter((e) => e.type !== "folder");
 
-  const children: InstanceType<typeof Paragraph>[] = [];
+  const children: Block[] = [];
   for (let i = 0; i < ordered.length; i++) {
     const entity = ordered[i];
     if (i > 0) children.push(new Paragraph({ children: [new PageBreak()] }));

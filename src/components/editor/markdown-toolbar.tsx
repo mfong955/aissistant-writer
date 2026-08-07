@@ -16,6 +16,7 @@ import {
   Quote,
   Minus,
   Link as LinkIcon,
+  Table,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import {
   toggleHeading,
   insertCodeBlock,
   insertHorizontalRule,
+  insertTable,
   insertLink,
   type TextEdit,
 } from "@/lib/markdown-toolbar-actions";
@@ -108,6 +110,7 @@ export function MarkdownToolbar({ textareaRef, getText, onApply }: MarkdownToolb
     { icon: Quote, title: "Blockquote", action: () => apply((t, s, e) => toggleLinePrefix(t, s, e, "> ")) },
     { icon: FileCode, title: "Code Block", action: () => apply((t, s, e) => insertCodeBlock(t, s, e)) },
     { icon: Minus, title: "Horizontal Rule", action: () => apply((t, s) => insertHorizontalRule(t, s)) },
+    { icon: Table, title: "Table", action: () => apply((t, s) => insertTable(t, s)) },
   ];
 
   return (

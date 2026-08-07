@@ -59,6 +59,59 @@ function parseInline(text: string): TiptapNode[] {
   return nodes.length ? nodes : [{ type: "text", text }];
 }
 
+type CellAlign = "left" | "center" | "right" | null;
+
+/** Splits a GFM table row on unescaped `|`, trimming a leading/trailing pipe if present. */
+function splitTableRow(line: string): string[] {
+  let trimmed = line.trim();
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+
+  const cells: string[] = [];
+  let current = "";
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed[i] === "\\" && trimmed[i + 1] === "|") {
+      current += "|";
+      i++;
+    } else if (trimmed[i] === "|") {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += trimmed[i];
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") && !trimmed.includes("|")) return false;
+  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(trimmed);
+}
+
+function parseAlignments(sepLine: string): CellAlign[] {
+  return splitTableRow(sepLine).map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return null;
+  });
+}
+
+function tableRowNode(cells: string[], aligns: CellAlign[], isHeader: boolean): TiptapNode {
+  return {
+    type: "tableRow",
+    content: cells.map((cellText, colIdx) => ({
+      type: isHeader ? "tableHeader" : "tableCell",
+      attrs: { colspan: 1, rowspan: 1, colwidth: null, align: aligns[colIdx] ?? null },
+      content: [{ type: "paragraph", content: parseInline(cellText) }],
+    })),
+  };
+}
+
 /**
  * Convert plain text / markdown to Tiptap JSON.
  * Handles headings (#), bullet lists (- / *), ordered lists (1.), blockquotes (>), bold (**), italic (*).
@@ -112,6 +165,26 @@ export function textToTiptapJson(text: string): Record<string, unknown> {
       continue;
     }
 
+    // Table (GFM pipe syntax): a row line immediately followed by a valid separator line
+    if (/^\s*\|/.test(line) && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1])) {
+      const headerCells = splitTableRow(line);
+      const aligns = parseAlignments(lines[i + 1]);
+      i += 2;
+      const bodyRows: string[][] = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i]) && lines[i].trim() !== "") {
+        bodyRows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      content.push({
+        type: "table",
+        content: [
+          tableRowNode(headerCells, aligns, true),
+          ...bodyRows.map((cells) => tableRowNode(cells, aligns, false)),
+        ],
+      });
+      continue;
+    }
+
     // Fenced code block
     const fenceMatch = /^```(\w*)\s*$/.exec(line.trim());
     if (fenceMatch) {
@@ -146,7 +219,7 @@ export function textToTiptapJson(text: string): Record<string, unknown> {
 
     // Paragraph: collect non-empty, non-special lines
     const paraLines: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|>\s|[-*]\s|\d+\.\s|---+$|```)/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|>\s|[-*]\s|\d+\.\s|---+$|```|\s*\|)/.test(lines[i])) {
       paraLines.push(lines[i]);
       i++;
     }
@@ -236,6 +309,28 @@ export function tiptapToMarkdown(content: Record<string, unknown>): string {
         lines.push("```" + lang);
         lines.push(text);
         lines.push("```");
+        lines.push("");
+        break;
+      }
+      case "table": {
+        const rows = node.content || [];
+        rows.forEach((row, rowIdx) => {
+          const cells = row.content || [];
+          const cellTexts = cells.map((cell) =>
+            (cell.content || []).map((p) => inlineToMd(p.content || [])).join(" ")
+          );
+          lines.push(`| ${cellTexts.join(" | ")} |`);
+          if (rowIdx === 0) {
+            const sep = cells.map((cell) => {
+              const align = cell.attrs?.align as CellAlign | undefined;
+              if (align === "center") return ":---:";
+              if (align === "right") return "---:";
+              if (align === "left") return ":---";
+              return "---";
+            });
+            lines.push(`| ${sep.join(" | ")} |`);
+          }
+        });
         lines.push("");
         break;
       }

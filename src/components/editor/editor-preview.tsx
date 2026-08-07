@@ -56,6 +56,10 @@ export function EditorPreview({ content }: EditorPreviewProps) {
         .prose-preview code { font-family: monospace; background: var(--muted); padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
         .prose-preview pre { background: var(--muted); padding: 1em; border-radius: 6px; overflow-x: auto; margin-bottom: 1em; }
         .prose-preview hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+        .prose-preview a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+        .prose-preview table { border-collapse: collapse; width: 100%; margin-bottom: 1em; font-size: 0.95em; }
+        .prose-preview th, .prose-preview td { border: 1px solid var(--border); padding: 0.5em 0.75em; text-align: left; }
+        .prose-preview th { background: var(--muted); font-weight: 600; }
       `}</style>
     </div>
   );
