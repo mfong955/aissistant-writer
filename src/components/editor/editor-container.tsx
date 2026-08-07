@@ -121,12 +121,20 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
 
   const isImageEntity = activeEntity?.type === "image";
 
+  // The single source of truth for "what's actually on screen right now," since
+  // MarkdownEditor owns its own textarea state and only pushes it up via this callback —
+  // activeEntity.content only reflects the last *saved* snapshot, not live keystrokes.
+  // Preview, word count, and export must all read this when it's available, or they show
+  // stale pre-edit content until something happens to trigger a full entities refetch.
+  const currentMarkdown = useMemo(() => {
+    if (!activeEntity?.content || isImageEntity) return "";
+    return liveMarkdown ?? tiptapToMarkdown(activeEntity.content);
+  }, [liveMarkdown, activeEntity?.content, isImageEntity]);
+
   const wordCount = useMemo(() => {
-    if (!activeEntity?.content || isImageEntity) return 0;
-    const md = tiptapToMarkdown(activeEntity.content);
-    const words = md.trim().split(/\s+/).filter(Boolean);
-    return words.length;
-  }, [activeEntity?.content, isImageEntity]);
+    if (!currentMarkdown) return 0;
+    return currentMarkdown.trim().split(/\s+/).filter(Boolean).length;
+  }, [currentMarkdown]);
 
   const readingTime = Math.ceil(wordCount / 200);
 
@@ -239,7 +247,10 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
         </div>
         {activeEntity && !isImageEntity && (
           <>
-            <ExportMenu name={activeEntity.name} content={activeEntity.content} />
+            <ExportMenu
+              name={activeEntity.name}
+              content={liveMarkdown ? textToTiptapJson(liveMarkdown) : activeEntity.content}
+            />
             <button
               onClick={() => setShowFindReplace((v) => !v)}
               title={`Find & Replace (${typeof navigator !== "undefined" && navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+H)`}
@@ -269,7 +280,7 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
             <div className="flex flex-1 flex-col overflow-hidden">
               {showFindReplace && !isPreview && (
                 <FindReplaceBar
-                  value={liveMarkdown ?? (activeEntity.content ? tiptapToMarkdown(activeEntity.content) : "")}
+                  value={currentMarkdown}
                   onChange={(md) => {
                     handleUpdate(textToTiptapJson(md));
                     setLiveMarkdown(md);
@@ -280,10 +291,17 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
                   onMatchIdxChange={(idx) => setCurrentMatchIdx(idx)}
                 />
               )}
-              <div className="flex-1 overflow-hidden">
-                {isPreview ? (
-                  <EditorPreview content={activeEntity.content} />
-                ) : (
+              {/*
+                MarkdownEditor stays mounted at all times, hidden (not unmounted) behind
+                EditorPreview while previewing. It previously unmounted on preview toggle,
+                which discarded any typed-but-not-yet-saved-and-refetched edit — switching
+                back to Edit re-created it from activeEntity.content, which only reflects the
+                last successful autosave that this context happened to know about. Preview
+                itself had the same bug from the other side: it rendered activeEntity.content
+                directly instead of the live in-progress text.
+              */}
+              <div className="relative flex-1 overflow-hidden">
+                <div className={isPreview ? "hidden" : "h-full"}>
                   <MarkdownEditor
                     key={activeEntity.id}
                     content={activeEntity.content}
@@ -295,6 +313,11 @@ export function EditorContainer({ selectedEntityId, onActiveTabChange }: EditorC
                     externalMarkdown={replacedMarkdown}
                     projectId={project?.id}
                   />
+                </div>
+                {isPreview && (
+                  <div className="absolute inset-0 bg-background">
+                    <EditorPreview markdown={currentMarkdown} />
+                  </div>
                 )}
               </div>
             </div>

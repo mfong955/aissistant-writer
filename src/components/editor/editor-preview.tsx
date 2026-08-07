@@ -2,23 +2,21 @@
 
 import { useMemo } from "react";
 import { marked } from "marked";
-import { tiptapToMarkdown } from "@/lib/tiptap-utils";
 
 interface EditorPreviewProps {
-  content: Record<string, unknown> | null;
+  markdown: string;
 }
 
-export function EditorPreview({ content }: EditorPreviewProps) {
+export function EditorPreview({ markdown }: EditorPreviewProps) {
   const html = useMemo(() => {
-    if (!content) return "";
+    if (!markdown) return "";
     try {
-      const md = tiptapToMarkdown(content);
-      const result = marked(md, { async: false });
+      const result = marked(markdown, { async: false });
       return result as string;
     } catch {
       return "<p><em>Unable to render preview.</em></p>";
     }
-  }, [content]);
+  }, [markdown]);
 
   return (
     <div className="h-full overflow-auto px-8 py-6">
