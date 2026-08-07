@@ -125,7 +125,13 @@ export async function POST(request: Request) {
           );
         }
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        let errorMsg = error instanceof Error ? error.message : "Unknown error";
+        if (!usesCredits && /OpenRouter error: 401/.test(errorMsg)) {
+          errorMsg =
+            "Your OpenRouter API key was rejected (401 from OpenRouter itself, not this app). " +
+            "It may be invalid, revoked, or corrupted. Go to Settings, remove it, and paste a fresh " +
+            "key from openrouter.ai/settings/keys, then use \"Test Connection\" to confirm.";
+        }
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ type: "error", error: errorMsg })}\n\n`)
         );

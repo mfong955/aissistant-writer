@@ -218,6 +218,24 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
                 </CardContent>
               </Card>
             </div>
+          ) : chosenWorkflow ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center">
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Ready when you are — type below, or try one of these to get started.
+              </p>
+              <div className="flex max-w-xs flex-col gap-2">
+                {chosenWorkflow.starterPrompts.map((sp) => (
+                  <button
+                    key={sp.label}
+                    type="button"
+                    onClick={() => sendMessage(sp.prompt)}
+                    className="rounded-lg border px-3 py-2 text-left text-xs hover:border-primary hover:bg-primary/5"
+                  >
+                    {sp.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
               Start a conversation with the AI assistant

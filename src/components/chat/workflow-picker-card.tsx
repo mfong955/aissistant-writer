@@ -65,11 +65,9 @@ export function WorkflowPickerCard({ project, onChoose }: WorkflowPickerCardProp
                   wf.title
                 )}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">{wf.about}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground/70">Best for:</span> {wf.bestFor}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground/70">Where it breaks:</span> {wf.whereItBreaks}
               </p>
             </button>
           ))}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface GlossaryTermProps {
@@ -15,29 +16,49 @@ interface GlossaryTermProps {
  * for readers who already know the word — they just never trigger it — so it's the one
  * way to teach craft vocabulary to new writers without annoying veterans with unwanted
  * explanations.
+ *
+ * Renders the popover through a portal at a fixed, viewport-relative position (computed
+ * from the trigger's bounding rect) rather than positioning it relative to its own DOM
+ * parent — otherwise it gets clipped by any ancestor with overflow:auto/hidden, which a
+ * small chat panel almost always has.
  */
 export function GlossaryTerm({ children, definition, example, className }: GlossaryTermProps) {
-  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+
+  function show() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCoords({ top: rect.top, left: rect.left + rect.width / 2 });
+  }
+
+  function hide() {
+    setCoords(null);
+  }
 
   return (
     <span
-      className={cn("relative inline-block border-b border-dotted border-muted-foreground/60 cursor-help", className)}
+      ref={triggerRef}
+      className={cn("border-b border-dotted border-muted-foreground/60 cursor-help", className)}
       tabIndex={0}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
     >
       {children}
-      {open && (
-        <span
-          role="tooltip"
-          className="absolute bottom-full left-1/2 z-50 mb-1.5 w-56 -translate-x-1/2 rounded-md border bg-popover p-2.5 text-xs font-normal normal-case text-popover-foreground shadow-md"
-        >
-          <span className="block">{definition}</span>
-          {example && <span className="mt-1 block text-muted-foreground italic">{example}</span>}
-        </span>
-      )}
+      {coords &&
+        createPortal(
+          <span
+            role="tooltip"
+            className="fixed z-[100] w-56 -translate-x-1/2 -translate-y-full rounded-md border bg-popover p-2.5 text-xs font-normal normal-case text-popover-foreground shadow-md"
+            style={{ top: coords.top - 6, left: coords.left }}
+          >
+            <span className="block">{definition}</span>
+            {example && <span className="mt-1 block text-muted-foreground italic">{example}</span>}
+          </span>,
+          document.body
+        )}
     </span>
   );
 }
