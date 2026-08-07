@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Plus, FolderOpen, Trash2, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
+import { EntryPointDialog } from "@/components/projects/entry-point-dialog";
 import { WelcomeModal } from "@/components/projects/welcome-modal";
 import type { Project } from "@/types/database";
+import type { EntryPoint } from "@/lib/onboarding";
 
 const WELCOMED_KEY = "aissistant:welcomed";
 
@@ -14,7 +16,9 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showEntryPoint, setShowEntryPoint] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [entryPoint, setEntryPoint] = useState<EntryPoint | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -57,12 +61,27 @@ export default function DashboardPage() {
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: description || null, project_type: projectType }),
+      body: JSON.stringify({
+        name,
+        description: description || null,
+        project_type: projectType,
+        entry_point: entryPoint,
+      }),
     });
     const data = (await res.json()) as { project: Project };
     if (data.project) {
       router.push(`/project/${data.project.id}`);
     }
+  }
+
+  function startCreate() {
+    setShowEntryPoint(true);
+  }
+
+  function handleEntryPointSelect(ep: EntryPoint) {
+    setEntryPoint(ep);
+    setShowEntryPoint(false);
+    setShowCreate(true);
   }
 
   async function handleDelete(id: string, e: React.MouseEvent) {
@@ -106,7 +125,7 @@ export default function DashboardPage() {
   function welcomeGetStarted() {
     localStorage.setItem(WELCOMED_KEY, "1");
     setShowWelcome(false);
-    setShowCreate(true);
+    startCreate();
   }
 
   return (
@@ -120,7 +139,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold">Aissistant Writer</h1>
           <p className="text-muted-foreground">Your writing projects</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button onClick={startCreate}>
           <Plus className="mr-2 h-4 w-4" />
           New Project
         </Button>
@@ -138,7 +157,7 @@ export default function DashboardPage() {
         <div className="mt-12 text-center">
           <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground/50" />
           <p className="mt-4 text-muted-foreground">No projects yet</p>
-          <Button className="mt-4" onClick={() => setShowCreate(true)}>
+          <Button className="mt-4" onClick={startCreate}>
             Create your first project
           </Button>
         </div>
@@ -217,10 +236,17 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {showEntryPoint && (
+        <EntryPointDialog
+          onSelect={handleEntryPointSelect}
+          onCancel={() => setShowEntryPoint(false)}
+        />
+      )}
+
       {showCreate && (
         <CreateProjectDialog
           onSubmit={handleCreate}
-          onCancel={() => setShowCreate(false)}
+          onCancel={() => { setShowCreate(false); setEntryPoint(null); }}
         />
       )}
     </div>

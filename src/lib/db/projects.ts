@@ -26,7 +26,8 @@ export async function dbCreateProject(
   userId: string,
   name: string,
   description?: string | null,
-  projectType?: ProjectType | null
+  projectType?: ProjectType | null,
+  settings?: Record<string, unknown>
 ): Promise<Project> {
   const { data, error } = await getAdminClient()
     .from("projects")
@@ -36,7 +37,7 @@ export async function dbCreateProject(
       name,
       description: description ?? null,
       project_type: projectType ?? null,
-      settings: {},
+      settings: settings ?? {},
     })
     .select()
     .single();

@@ -1,4 +1,5 @@
 import type { ProjectType } from "@/types/database";
+import type { WorkflowDefinition } from "@/lib/onboarding";
 
 const FOLDER_GUIDELINES: Record<NonNullable<ProjectType>, string> = {
   novel: `- root="canon": Characters/ (arc, backstory, voice, relationships), Settings/ (locations, world-building, maps, culture, history), Timeline/ (chronology of story events), Rules/ (magic systems, story logic, constraints)
@@ -58,6 +59,7 @@ export function buildSystemPrompt(params: {
   entitySummaries?: Array<{ name: string; type: string; summary: string }>;
   activeEntityContent?: { name: string; type: string; content: string };
   entityIndex?: Array<{ id: string; name: string; type: string; parent_id: string | null }>;
+  workflow?: WorkflowDefinition | null;
 }): string {
   const sections: string[] = [];
 
@@ -90,6 +92,15 @@ After any session where you created, updated, or deleted content: update the "Pr
 
   // File organization guidance (always included)
   sections.push(`## File Organization\n${getDefaultFolderGuidance(params.projectType ?? null)}`);
+
+  // Workflow — non-binding, writer-chosen approach (docs/onboarding-workflows.md §3). Shapes
+  // the opening move and ongoing lean, never a hard rule; the writer can ignore or switch it.
+  if (params.workflow) {
+    sections.push(`## Writing Approach: "${params.workflow.title}"
+The writer chose this approach to get started — treat it as a lean, not a rule; drop it the moment they steer elsewhere.
+${params.workflow.openingGuidance}
+Known failure mode of this approach: ${params.workflow.whereItBreaks} — watch for it and say something if you see it happening.`);
+  }
 
   // Custom project instructions (user-defined, injected after defaults so they can override)
   if (params.systemInstructions?.trim()) {

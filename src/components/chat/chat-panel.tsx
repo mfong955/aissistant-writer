@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Trash2, Key, Loader2, Zap } from "lucide-react";
+import { Trash2, Key, Loader2, Zap, Compass, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useProject } from "@/contexts/project-context";
@@ -10,6 +10,9 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ModelSelector } from "./model-selector";
+import { WorkflowPickerCard } from "./workflow-picker-card";
+import { getOnboardingSettings, getWorkflow, type WorkflowKey } from "@/lib/onboarding";
+import type { Project } from "@/types/database";
 
 interface ChatPanelContentProps {
   activeEntityIds?: string[];
@@ -17,11 +20,42 @@ interface ChatPanelContentProps {
 }
 
 export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelContentProps) {
-  const { project, entities } = useProject();
+  const { project, entities, setProject } = useProject();
   const [modelId, setModelId] = useState<string | null>(null);
   const [contextLimit, setContextLimit] = useState<number>(128000);
   const [noApiKey, setNoApiKey] = useState(false);
+  const [pickerOpenManually, setPickerOpenManually] = useState(false);
+  const [creditsEnabled, setCreditsEnabled] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/billing/status")
+      .then((r) => r.json())
+      .then((data: { enabled: boolean }) => setCreditsEnabled(data.enabled));
+  }, []);
+
+  const onboarding = project ? getOnboardingSettings(project) : {};
+  const workflowUnset = !onboarding.workflowStatus || onboarding.workflowStatus === "unset";
+  const chosenWorkflow = getWorkflow(onboarding.workflow);
+
+  async function handleChooseWorkflow(key: WorkflowKey | null) {
+    if (!project) return;
+    const nextSettings = {
+      ...(project.settings ?? {}),
+      workflow: key,
+      workflowStatus: key ? "chosen" : "skipped",
+    };
+    const res = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: nextSettings }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { project: Project };
+      setProject(data.project);
+    }
+    setPickerOpenManually(false);
+  }
 
   // Drag-to-resize input area
   const [inputAreaHeight, setInputAreaHeight] = useState(100);
@@ -99,6 +133,21 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
         onNoApiKey={setNoApiKey}
       />
 
+      {/* Workflow indicator — always available, per docs/onboarding-workflows.md §3 ("non-binding") */}
+      {project && !noApiKey && (
+        <button
+          type="button"
+          onClick={() => setPickerOpenManually((v) => !v)}
+          className="flex items-center gap-1 border-b px-3 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+        >
+          <Compass className="h-3 w-3" />
+          <span>
+            Workflow: {chosenWorkflow ? chosenWorkflow.title : workflowUnset ? "Not set" : "Free-form"}
+          </span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      )}
+
       {/* Context usage bar */}
       {contextInfo && (
         <div className="border-b px-3 py-1.5">
@@ -121,7 +170,9 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
 
       {/* Messages */}
       <div className="flex-1 overflow-auto">
-        {messages.length === 0 ? (
+        {!noApiKey && project && (pickerOpenManually || (workflowUnset && messages.length === 0)) ? (
+          <WorkflowPickerCard project={project} onChoose={handleChooseWorkflow} />
+        ) : messages.length === 0 ? (
           noApiKey ? (
             <div className="flex h-full items-center justify-center p-4">
               <Card className="max-w-sm">
@@ -150,15 +201,17 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
                       and paste it in Settings. You pay OpenRouter directly at cost.
                     </p>
                   </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="mb-1 flex items-center gap-1.5 text-sm font-medium">
-                      <Zap className="h-3.5 w-3.5 text-primary" />
-                      Option B &mdash; Buy AI credits
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      No API key needed. Buy a credit pack (from $5) and start chatting immediately.
-                    </p>
-                  </div>
+                  {creditsEnabled && (
+                    <div className="rounded-lg border p-3">
+                      <p className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                        <Zap className="h-3.5 w-3.5 text-primary" />
+                        Option B &mdash; Buy AI credits
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        No API key needed. Buy a credit pack (from $5) and start chatting immediately.
+                      </p>
+                    </div>
+                  )}
                   <Button asChild className="w-full">
                     <Link href="/settings">Go to Settings</Link>
                   </Button>

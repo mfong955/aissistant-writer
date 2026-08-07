@@ -4,6 +4,7 @@ import { estimateTokens } from "./token-estimator";
 import { buildSystemPrompt } from "./system-prompt-template";
 import { extractTextFromTiptap } from "@/lib/tiptap-utils";
 import { findRootKeyForEntity } from "@/lib/entity-roots";
+import { getOnboardingSettings, getWorkflow } from "@/lib/onboarding";
 import type { Entity, EntitySummary } from "@/types/database";
 
 interface ContextBuildResult {
@@ -26,11 +27,15 @@ export async function buildContext(params: {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("name, project_type, system_instructions")
+    .select("name, project_type, system_instructions, settings")
     .eq("id", projectId)
-    .single() as unknown as { data: { name: string; project_type: string | null; system_instructions: string | null } | null; error: null };
+    .single() as unknown as {
+      data: { name: string; project_type: string | null; system_instructions: string | null; settings: Record<string, unknown> | null } | null;
+      error: null;
+    };
 
   const projectName = project?.name || "Untitled Project";
+  const chosenWorkflow = project ? getWorkflow(getOnboardingSettings({ settings: project.settings ?? {} }).workflow) : null;
 
   const { data: instructionsRow } = await supabase
     .from("entities")
@@ -165,6 +170,7 @@ export async function buildContext(params: {
     entitySummaries: includedSummaries,
     activeEntityContent,
     entityIndex: entityIndexForPrompt,
+    workflow: chosenWorkflow,
   });
 
   return {
