@@ -2,11 +2,13 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { TopBar } from "@/components/layout/top-bar";
+import { TopBar, type ProjectMode } from "@/components/layout/top-bar";
 import { ProjectExplorer } from "@/components/explorer/project-explorer";
 import { EditorContainer } from "@/components/editor/editor-container";
 import { ChatPanelContent } from "@/components/chat/chat-panel";
 import { SearchDialog } from "@/components/search/search-dialog";
+import { CanvasList } from "@/components/canvas/canvas-list";
+import { CanvasBoard } from "@/components/canvas/canvas-board";
 import { useProject } from "@/contexts/project-context";
 import { useSessionTracker } from "@/hooks/use-session-tracker";
 import "allotment/dist/style.css";
@@ -15,6 +17,8 @@ export function ProjectShell() {
   const [selectedEntityId, setSelectedEntityId] = useState<string>();
   const [activeEditorEntityId, setActiveEditorEntityId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mode, setMode] = useState<ProjectMode>("explorer");
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string>();
   const { project, refreshEntities } = useProject();
 
   const { trackView, trackEdit } = useSessionTracker({
@@ -73,18 +77,26 @@ export function ProjectShell() {
       onSelect={handleSelectEntity}
     />
     <AppShell
-      topBar={<TopBar />}
+      topBar={<TopBar mode={mode} onModeChange={setMode} />}
       sidebar={
-        <ProjectExplorer
-          onSelectEntity={handleSelectEntity}
-          selectedEntityId={selectedEntityId}
-        />
+        mode === "canvas" ? (
+          <CanvasList selectedCanvasId={selectedCanvasId} onSelectCanvas={setSelectedCanvasId} />
+        ) : (
+          <ProjectExplorer
+            onSelectEntity={handleSelectEntity}
+            selectedEntityId={selectedEntityId}
+          />
+        )
       }
       editor={
-        <EditorContainer
-          selectedEntityId={selectedEntityId}
-          onActiveTabChange={handleActiveTabChange}
-        />
+        mode === "canvas" ? (
+          <CanvasBoard canvasId={selectedCanvasId} />
+        ) : (
+          <EditorContainer
+            selectedEntityId={selectedEntityId}
+            onActiveTabChange={handleActiveTabChange}
+          />
+        )
       }
       chat={
         <ChatPanelContent

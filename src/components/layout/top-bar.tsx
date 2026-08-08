@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PenLine, Settings, SlidersHorizontal, ChevronLeft, Focus, Search } from "lucide-react";
+import { PenLine, Settings, SlidersHorizontal, ChevronLeft, Focus, Search, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useProject } from "@/contexts/project-context";
 import { ProjectSettingsDialog } from "@/components/project/project-settings-dialog";
 import { ProjectExportMenu } from "@/components/project/project-export-menu";
 
-export function TopBar() {
+export type ProjectMode = "explorer" | "canvas";
+
+interface TopBarProps {
+  mode: ProjectMode;
+  onModeChange: (mode: ProjectMode) => void;
+}
+
+export function TopBar({ mode, onModeChange }: TopBarProps) {
   const { project } = useProject();
   const router = useRouter();
 
@@ -20,6 +28,26 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <PenLine className="h-4 w-4 text-muted-foreground" />
         <span className="font-medium">{project?.name}</span>
+      </div>
+      <div className="flex items-center rounded-md border p-0.5 text-xs">
+        <button
+          onClick={() => onModeChange("explorer")}
+          className={cn(
+            "flex items-center gap-1 rounded px-2 py-1 transition-colors",
+            mode === "explorer" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <PenLine className="h-3 w-3" /> Explorer
+        </button>
+        <button
+          onClick={() => onModeChange("canvas")}
+          className={cn(
+            "flex items-center gap-1 rounded px-2 py-1 transition-colors",
+            mode === "canvas" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Workflow className="h-3 w-3" /> Canvas
+        </button>
       </div>
       <div className="ml-auto flex items-center gap-1">
         <Button
