@@ -6,7 +6,8 @@ export type EntityType =
   | "note"
   | "world_building"
   | "custom"
-  | "image";
+  | "image"
+  | "canvas";
 
 export type ChangeAction = "create" | "update" | "delete" | "rename" | "move";
 export type ChangeActor = "user" | "ai";
@@ -46,6 +47,42 @@ export interface Entity {
   version_hash: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Canvas mode — see docs/canvas-mode.md. A canvas is an `entities` row (type: "canvas") whose
+// `content` holds a CanvasContent instead of a Tiptap document.
+export interface CanvasNode {
+  id: string;
+  position: { x: number; y: number };
+  title: string;
+  kind: "freeform" | "linked";
+  /** Present when kind === "linked" — ties this node back to a real Canon/Manuscript/Unsorted entity. */
+  linkedEntityId?: string;
+  body: string;
+  color?: string;
+}
+
+export interface CanvasEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface CanvasContent {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}
+
+/** Append-only restorable checkpoint of a canvas — the Attic philosophy for structured data. */
+export interface CanvasVersion {
+  id: string;
+  canvas_id: string;
+  project_id: string;
+  user_id: string;
+  snapshot: CanvasContent;
+  label: string | null;
+  created_at: string;
 }
 
 export interface EntitySummary {

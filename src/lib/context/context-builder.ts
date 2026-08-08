@@ -67,7 +67,11 @@ export async function buildContext(params: {
     supabase.from("project_states").select("state_content").eq("project_id", projectId).single(),
   ]);
 
-  const allEntities: Entity[] = (entityRows ?? []) as Entity[];
+  // Canvases (docs/canvas-mode.md) aren't prose — their `content` is a node/edge graph, not
+  // Tiptap JSON, so they must never reach extractTextFromTiptap/tiptapToMarkdown or be offered
+  // to the AI through the prose-oriented read_entity/update_entity tools. Canvas AI access is
+  // its own read_canvas/update_canvas pair, not yet built.
+  const allEntities: Entity[] = ((entityRows ?? []) as Entity[]).filter((e) => e.type !== "canvas");
   const allSummaries: EntitySummary[] = (summaryRows ?? []) as EntitySummary[];
 
   const basePromptTokens = 500;

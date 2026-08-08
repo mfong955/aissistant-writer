@@ -114,6 +114,13 @@ export async function executeToolCall(
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to read entity ${entityId}` };
       }
+      if (entity.type === "canvas") {
+        return {
+          success: false,
+          result: { error: "This is a canvas, not a document — read_entity can't interpret it. Canvas AI access isn't available yet." },
+          description: `Refused to read canvas: ${entity.name}`,
+        };
+      }
 
       const contentText = entity.content
         ? extractTextFromTiptap(entity.content as Record<string, unknown>)
@@ -202,6 +209,13 @@ export async function executeToolCall(
           success: false,
           result: { error: "Canon, Manuscript, and Unsorted are fixed containers and cannot be edited." },
           description: `Refused to update fixed root: ${entity.name}`,
+        };
+      }
+      if (entity.type === "canvas") {
+        return {
+          success: false,
+          result: { error: "This is a canvas, not a document — update_entity can't write to it. Canvas AI access isn't available yet." },
+          description: `Refused to update canvas: ${entity.name}`,
         };
       }
 

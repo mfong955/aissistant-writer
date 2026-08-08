@@ -194,11 +194,17 @@ export async function resolveEntityParent(
   return parentId;
 }
 
+/**
+ * Returns everything in the regular explorer's world — not canvases (docs/canvas-mode.md),
+ * which are a parallel surface with their own listing (`dbGetCanvases`) and never appear in
+ * the Canon/Manuscript/Unsorted tree, the chat entity picker, or anywhere else this feeds.
+ */
 export async function dbGetEntities(projectId: string): Promise<Entity[]> {
   const { data, error } = await getAdminClient()
     .from("entities")
     .select("*")
     .eq("project_id", projectId)
+    .neq("type", "canvas")
     .order("sort_order", { ascending: true });
   if (error) throw error;
   return (data ?? []) as Entity[];

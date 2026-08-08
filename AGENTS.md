@@ -94,13 +94,18 @@ npm run dev
 Requires a Supabase project with the migrations in `supabase/migrations/` applied, and `ENCRYPTION_KEY` set before any user stores an API key. `OPENROUTER_SYSTEM_API_KEY` and the Stripe variables are optional — leaving the OpenRouter system key unset disables the credits path and makes the app BYOK-only.
 
 **What's next:**
-1. **BYOK activation path** — reduce the copy-paste-a-key barrier via OpenRouter's OAuth PKCE connect flow. Confirmed feasible and documented: `GET https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256` → user authorizes → redirect back with `code` → `POST https://openrouter.ai/api/v1/auth/keys` with `{ code, code_verifier, code_challenge_method }` returns a provisioned key, stored exactly like a manually-pasted one. No app registration required. Docs: `openrouter.ai/docs/guides/overview/auth/oauth`.
-2. **Import staging** — never auto-file an import; propose, let the writer accept/edit/reject per item
-3. Rewrite README.md for the actual product
-4. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
+1. **Canvas mode UI** — mode toggle, canvas list, React Flow board, node/edit editing, checkpoints/version history. Data model is scaffolded (`docs/canvas-mode.md`); nothing renders yet. **Migration `005_canvas_mode.sql` has not been applied to Supabase** — needed before any canvas can actually be created.
+2. **Canvas AI tools** — `read_canvas`/`update_canvas`, wired into the chat context builder. Depends on item 1 existing first.
+3. **Canvas apply-to-project flow** — plan generation + per-item review dialog, reusing the rename-sync review UI pattern. Depends on items 1–2.
+4. **BYOK activation path** — reduce the copy-paste-a-key barrier via OpenRouter's OAuth PKCE connect flow. Confirmed feasible and documented: `GET https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256` → user authorizes → redirect back with `code` → `POST https://openrouter.ai/api/v1/auth/keys` with `{ code, code_verifier, code_challenge_method }` returns a provisioned key, stored exactly like a manually-pasted one. No app registration required. Docs: `openrouter.ai/docs/guides/overview/auth/oauth`.
+5. **Import staging** — never auto-file an import; propose, let the writer accept/edit/reject per item
+6. Editor "big" tier — footnotes/cross-references, deferred by Matthew's choice while equations get scoped separately (see "Also under discussion" below)
+7. Rewrite README.md for the actual product
+8. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
 
 **Also under discussion, not yet built:**
 - **Idea-partner discoverability nudge** — a small, dismissible inline prompt in the editor ("Stuck? Ask the AI for ideas →") to teach that chat is also for getting unstuck, not just organizing. Deliberately *not* a persistent toolbar button, to avoid bifurcating "chat" and "ideas" into two things a stuck writer has to choose between. Designed trigger: fires once per project, the first time a **Manuscript** entity is opened empty and stays empty for ~10–15s with no keystrokes; cancels if they start typing; never repeats for that project once shown (`projects.settings.ideaNudgeShown`). Not implemented yet — confirm before building.
+- **Equations in the editor** — same "big tier" as footnotes, scoped separately because it has a real trade-off to resolve first: Word represents math as OMML, not LaTeX/KaTeX, and there's no converter available here. Realistic path is KaTeX → SVG → rasterize → embed as an image in DOCX exports (visually correct, not editable in Word afterward) — a genuine new rendering pipeline, not a small add. Confirm the image-fallback trade-off with Matthew before building.
 
 **Open design question — rewrites and restarts:**
 Importing an existing project is a primary entry point, which means the writer must be able to continue forward, rework parts, or strip it down and start over. The constraint is psychological before it is technical: writers do not delete drafts, because deleting feels like killing. The working direction is that nothing is ever destroyed, only re-shelved — separating durable *canon* (characters, settings, timeline, rules) from disposable *manuscript* (scenes, chapters), and treating structural changes as AI-generated **impact reports** the writer works through item by item, never as automatic propagation across the manuscript. Not yet decided; do not implement without confirming with Matthew.
@@ -188,6 +193,11 @@ Reasoning: the thing that fragments a free-form tree over months is not the writ
 Options considered: keep "Aissistant Writer" as the in-app name with smartaiss.com as a URL-only pun (the 2026-07-29 decision), rename the product itself to Smartaiss everywhere
 Chose: rename to Smartaiss across all user-facing surfaces (page titles/OG tags, landing page, login/signup, dashboard header, welcome modal, Electron window title and productName, Stripe checkout line item, the `X-Title`/`HTTP-Referer` sent to OpenRouter)
 Reasoning: Matthew's direct call, reversing the earlier decision that the earnest in-app name and the punny domain should stay separate. Deliberately did **not** touch: `src/lib/encryption.ts`'s `"aissistant-writer-salt"` constant (it's a cryptographic salt for deriving the key-encryption key, never user-facing — changing it would silently break decryption of every already-stored OpenRouter key, the same failure mode as changing `ENCRYPTION_KEY`); `package.json`'s `name` field and Electron's `appId` (internal identifiers, not user-facing, and `appId` in particular affects macOS keychain/permission continuity for an already-installed app); and the GitHub repo name / folder name / Vercel project (infra-level rename with its own blast radius, not what "the app/UI" asked for). `PRODUCT.md` and the landing page (`src/app/page.tsx`) were only touched for the name itself — both still carry older messaging from before the 2026-07-29 cold-start positioning pivot (the landing page's "eliminate the context problem" framing and a "Pro $12/month" pricing tier that contradicts the recorded no-paid-tier monetization strategy) that was out of scope here and needs its own pass.
+
+**[2026-08-07] Canvas mode architecture — reuse entities, conflict-detect don't merge, AI writes directly**
+Options considered: a new dedicated `canvases`/`canvas_nodes`/`canvas_edges` schema vs. reusing `entities`; real-time collaborative merging vs. optimistic-concurrency conflict detection vs. no protection; requiring approval for every AI edit to a canvas vs. only at the point it's applied to the real project
+Chose: canvases are `entities` rows (`type: "canvas"`, kept out of the Canon/Manuscript/Unsorted tree entirely — not nested under any root) with a `content` shape of `{ nodes, edges }` instead of Tiptap JSON; conflict detection via the existing `version_hash` column (refuse a stale write, don't merge); AI edits a canvas directly with no per-edit confirmation, approval required only at the canvas→project "apply" step
+Reasoning: reusing `entities` gets RLS, autosave plumbing, and `version_hash` for free instead of standing up parallel infrastructure. The two-tabs-by-accident scenario Matthew raised is a guard-rail problem, not a request for live collaboration — real-time merge would be a substantially larger feature solving a different problem than the one in scope. No confirmation wall on AI canvas edits because the canvas is already the sandbox (reversible via version history, editable by either party) — the caution that matters belongs at the boundary where canvas content becomes real project content, which is the existing impact-report pattern from `docs/onboarding-workflows.md` §5 generalized, not a new concept. Full design in `docs/canvas-mode.md`. Status: data model scaffolded (migration `005_canvas_mode.sql`, `src/lib/db/canvas.ts`) — UI, AI tools (`read_canvas`/`update_canvas`), and the apply-to-project flow are not built yet.
 
 ### Architecture
 
@@ -282,6 +292,7 @@ All project context lives in this file until the project grows enough to warrant
 | Context window strategy | Key Decisions section above |
 | Competitive research | Discussed in initial planning session (not persisted — key insight: no tool combines strong organization + flexible AI + retroactive change management) |
 | Cold-start onboarding, workflows, rewrite model | `docs/onboarding-workflows.md` |
+| Canvas mode (visual plot/story mapping) | `docs/canvas-mode.md` — data model scaffolded, UI/AI tools/apply-flow not yet built |
 | Credit math, markup, and cost ceilings | `src/lib/billing/credits.ts` (single source of truth, commented) |
 | Assistant behavior guidelines | Assistant Guidelines section below |
 | Development principles | Development Principles section below |
@@ -368,6 +379,11 @@ memory every session shares.
   leave it for Matthew rather than reconstructing a plausible story.
 - **Verify before reporting done.** Typecheck and lint at minimum; say plainly what was
   and was not tested.
+- **Write a spec doc before building a major feature.** Same shape as
+  `docs/onboarding-workflows.md` and `docs/canvas-mode.md`: problem statement, concrete
+  design, explicit open questions, a build order. Applies to every major feature going
+  forward, not just these two — write the doc, then scaffold/implement against it, rather
+  than designing only in conversation. It's the durable record; the conversation isn't.
 
 ### Starting a New Project
 
