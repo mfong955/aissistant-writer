@@ -294,6 +294,7 @@ async function processChat(params: {
 
     const toolResults: Array<{ toolCallId: string; result: Record<string, unknown>; description: string }> = [];
     let questionAsked: { question: string; options: string[] } | null = null;
+    let planProposed: { source: string; summary: string; items: Record<string, unknown>[] } | null = null;
     for (const [, tc] of result.toolCalls) {
       let args: Record<string, unknown>;
       try {
@@ -330,6 +331,13 @@ async function processChat(params: {
           options: (toolResult.result.options as string[] | undefined) ?? [],
         };
       }
+      if (tc.name === "propose_plan" && toolResult.success) {
+        planProposed = {
+          source: (toolResult.result.source as string) ?? "",
+          summary: (toolResult.result.summary as string) ?? "",
+          items: (toolResult.result.items as Record<string, unknown>[] | undefined) ?? [],
+        };
+      }
     }
 
     // A question always ends the turn here, regardless of what other tools ran alongside it or
@@ -351,6 +359,22 @@ async function processChat(params: {
           )
         );
       }
+      break;
+    }
+
+    // Same reasoning as ask_question above — proposing and then continuing to act anyway would
+    // defeat the entire point of asking for review first. See docs/apply-flow.md §3.
+    if (planProposed) {
+      if (!result.content.trim()) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "text", content: planProposed.summary })}\n\n`)
+        );
+      }
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: "plan", source: planProposed.source, summary: planProposed.summary, items: planProposed.items })}\n\n`
+        )
+      );
       break;
     }
 

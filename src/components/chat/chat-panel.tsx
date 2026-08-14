@@ -106,6 +106,18 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
     return () => window.removeEventListener("aissistant:rename-synced", handler as EventListener);
   }, [addSystemMessage]);
 
+  // "Apply to Project" from the canvas toolbar — drops a kickoff request into this
+  // already-visible chat panel rather than a new UI surface (see docs/apply-flow.md §5).
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ canvasId: string; canvasName: string }>) => {
+      sendMessage(
+        `Apply canvas "${e.detail.canvasName}" to the project — read it with read_canvas, then propose a plan for what to create or update in Canon, Manuscript, or Unsorted.`
+      );
+    };
+    window.addEventListener("aissistant:canvas-apply", handler as EventListener);
+    return () => window.removeEventListener("aissistant:canvas-apply", handler as EventListener);
+  }, [sendMessage]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -244,7 +256,13 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
         ) : (
           <>
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} onQuickReply={(text) => sendMessage(text)} />
+              <ChatMessage
+                key={msg.id}
+                message={msg}
+                onQuickReply={(text) => sendMessage(text)}
+                projectId={project?.id}
+                onPlanApplied={(applyMsg) => { addSystemMessage(applyMsg); onEntityChange?.(); }}
+              />
             ))}
             {isStreaming && (() => {
               const last = messages[messages.length - 1];

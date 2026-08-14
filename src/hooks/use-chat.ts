@@ -25,6 +25,27 @@ export interface ChatMessageUI {
   /** Present when the AI called ask_question with a few natural, distinct answers — rendered
    *  as clickable quick replies. Open-ended questions have no options; the writer just types. */
   questionOptions?: string[];
+  /** Present when the AI called propose_plan — a batch of creates/updates awaiting the
+   *  writer's per-item review. See docs/apply-flow.md. */
+  plan?: PlanUI;
+}
+
+export interface PlanItemUI {
+  id: string;
+  action: "create" | "update";
+  name?: string;
+  type?: string;
+  root?: string;
+  path?: string;
+  entity_id?: string;
+  content: string;
+  reason?: string;
+}
+
+export interface PlanUI {
+  source: string;
+  summary: string;
+  items: PlanItemUI[];
 }
 
 export interface ToolCallUI {
@@ -282,6 +303,16 @@ export function useChat({
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantId ? { ...m, questionOptions: event.options } : m
+                    )
+                  );
+                  break;
+
+                case "plan":
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantId
+                        ? { ...m, plan: { source: event.source, summary: event.summary, items: event.items } }
+                        : m
                     )
                   );
                   break;

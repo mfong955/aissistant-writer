@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap, Info, HelpCircle } from "lucide-react";
 import type { ChatMessageUI } from "@/hooks/use-chat";
+import { PlanReviewCard } from "./plan-review-card";
 
 interface ChatMessageProps {
   message: ChatMessageUI;
   onQuickReply?: (text: string) => void;
+  projectId?: string;
+  onPlanApplied?: (message: string) => void;
 }
 
-export function ChatMessage({ message, onQuickReply }: ChatMessageProps) {
+export function ChatMessage({ message, onQuickReply, projectId, onPlanApplied }: ChatMessageProps) {
   if (message.role === "system") {
     return (
       <div className="flex items-start gap-2 border-b border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
@@ -102,6 +105,15 @@ export function ChatMessage({ message, onQuickReply }: ChatMessageProps) {
               </button>
             ))}
           </div>
+        )}
+
+        {/* Plan awaiting per-item review from a propose_plan call — see docs/apply-flow.md */}
+        {message.plan && projectId && (
+          <PlanReviewCard
+            plan={message.plan}
+            projectId={projectId}
+            onApplied={(msg) => onPlanApplied?.(msg)}
+          />
         )}
 
         {/* System notice about the exchange itself — never something the model said */}

@@ -17,7 +17,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Plus, Save, History, AlertTriangle, Workflow, Map as MapIcon } from "lucide-react";
+import { Plus, Save, History, AlertTriangle, Workflow, Map as MapIcon, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/contexts/project-context";
@@ -310,6 +310,20 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
             title={showMiniMap ? "Hide minimap" : "Show minimap"}
           >
             <MapIcon className="h-3.5 w-3.5" /> Map
+          </Button>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent("aissistant:canvas-apply", {
+                  detail: { canvasId, canvasName: canvasEntity.name },
+                })
+              );
+            }}
+            title="Ask the AI to propose applying this canvas to your project"
+          >
+            <Send className="h-3.5 w-3.5" /> Apply to Project
           </Button>
           <span className="ml-auto text-[11px] text-muted-foreground">
             {saving ? "Saving…" : "Never propagates to your project until you apply it"}

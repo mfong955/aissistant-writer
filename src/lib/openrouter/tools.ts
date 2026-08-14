@@ -259,6 +259,55 @@ export const interactionTools: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "propose_plan",
+      description:
+        "Propose a batch of changes to the real project — creates and updates — for the writer to review and approve item by item before anything is actually written. See docs/apply-flow.md. Use this instead of create_entity/update_entity specifically when you're about to write several things at once AND the content came from somewhere the writer hasn't already seen and typed themselves — applying a canvas, or organizing a document they just uploaded. For a single item, or content the writer is actively dictating to you in this conversation, use create_entity/update_entity directly instead — don't make them review something they basically just told you to do. Like ask_question, this always ends the turn and waits; nothing is written until they respond.",
+      parameters: {
+        type: "object",
+        properties: {
+          source: {
+            type: "string",
+            enum: ["canvas", "import"],
+            description: "Where this batch came from — which canvas/import triggered it.",
+          },
+          summary: {
+            type: "string",
+            description: "One or two sentences the writer sees above the list, e.g. \"Found 14 characters, 3 settings, 9 chapters, and 40 pages I couldn't classify.\"",
+          },
+          items: {
+            type: "array",
+            description: "The proposed changes. Each becomes one reviewable row.",
+            items: {
+              type: "object",
+              properties: {
+                action: { type: "string", enum: ["create", "update"] },
+                name: { type: "string", description: "Required for action=create." },
+                type: {
+                  type: "string",
+                  enum: ["character", "chapter", "outline", "note", "world_building", "folder", "custom"],
+                  description: "Required for action=create.",
+                },
+                root: {
+                  type: "string",
+                  enum: ["canon", "manuscript", "unsorted"],
+                  description: "Required for action=create — same guidance as create_entity's root param.",
+                },
+                path: { type: "string", description: "Optional folder path within the root, same convention as create_entity." },
+                entity_id: { type: "string", description: "Required for action=update — the entity being changed, from the Project Files list." },
+                content: { type: "string", description: "The proposed content, in plain text." },
+                reason: { type: "string", description: "One line: why this item. E.g. \"appears in 4 scenes, no character sheet yet.\"" },
+              },
+              required: ["action", "content", "reason"],
+            },
+          },
+        },
+        required: ["source", "summary", "items"],
+      },
+    },
+  },
 ];
 
 // Canvas layout. Grounded in two bodies of practice: narrative-planning tools (Plottr-style
@@ -768,6 +817,32 @@ export async function executeToolCall(
         success: true,
         result: { question, options },
         description: `Asked: ${question}`,
+      };
+    }
+
+    case "propose_plan": {
+      // Pure surface-and-pause, like ask_question — never touches the database. Applying a
+      // plan is a separate, explicit step (POST /api/plans/apply) executed only once the writer
+      // has reviewed and approved specific items; see docs/apply-flow.md §4.
+      const source = args.source as string;
+      const summary = args.summary as string;
+      const rawItems = (args.items as Array<{
+        action: "create" | "update";
+        name?: string;
+        type?: string;
+        root?: string;
+        path?: string;
+        entity_id?: string;
+        content: string;
+        reason: string;
+      }> | undefined) ?? [];
+
+      const items = rawItems.map((item) => ({ id: crypto.randomUUID(), ...item }));
+
+      return {
+        success: true,
+        result: { source, summary, items },
+        description: `Proposed a plan: ${summary}`,
       };
     }
 
