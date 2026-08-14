@@ -45,8 +45,10 @@ export function PurchaseDialog({ onClose }: Props) {
           <div>
             <h2 className="text-lg font-semibold">Add AI credit</h2>
             <p className="text-sm text-muted-foreground">
-              You&rsquo;re charged what the AI actually costs, plus 20% to cover payment
-              processing. Bring your own OpenRouter key instead and you pay us nothing.
+              You&rsquo;re charged what the AI actually costs, plus 32% &mdash; about 20 points
+              covers Stripe and OpenRouter&rsquo;s own fees, the rest is a small margin that
+              helps fund the project. Bring your own OpenRouter key instead and you pay us
+              nothing.
             </p>
           </div>
           <button

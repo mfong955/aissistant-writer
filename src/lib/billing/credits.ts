@@ -11,11 +11,14 @@
 export const CREDITS_PER_USD = 1000;
 
 /**
- * Applied to OpenRouter's reported cost. Covers Stripe (2.9% + $0.30 per charge, which
- * is ~8.9% of a $5 top-up) and OpenRouter's own fee on credit purchases. This is a
- * break-even figure, not a profit margin, and it is stated plainly in the purchase UI.
+ * Applied to OpenRouter's reported cost. ~20 points cover Stripe (2.9% + $0.30 per charge,
+ * ~8.9% of a $5 top-up) and OpenRouter's own fee on credit purchases — that portion is
+ * break-even, not profit. The remaining ~10 points are a deliberate small margin, added
+ * [2026-08-14] reversing the original break-even-only design (see AGENTS.md Key Decisions —
+ * both the original call and this reversal are recorded there, not just this comment).
+ * Stated plainly in the purchase UI either way — see purchase-dialog.tsx.
  */
-export const MARKUP = 1.2;
+export const MARKUP = 1.32;
 
 /**
  * A request on the credits path will not start below this balance.

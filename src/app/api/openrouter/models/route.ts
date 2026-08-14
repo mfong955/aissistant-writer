@@ -20,6 +20,7 @@ export async function GET() {
   const settings = await dbGetUserSettings(userId);
 
   let apiKey: string;
+  let usingSystemKey = false;
   if (settings?.openrouter_api_key_encrypted) {
     try {
       apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
@@ -32,6 +33,7 @@ export async function GET() {
       return NextResponse.json({ error: "No API key configured" }, { status: 400 });
     }
     apiKey = systemKey;
+    usingSystemKey = true;
   }
 
   try {
@@ -41,7 +43,7 @@ export async function GET() {
       .filter((m) => m.context_length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const result = { models: chatModels };
+    const result = { models: chatModels, usingSystemKey };
     modelCache.set(userId, { data: result, expires: Date.now() + CACHE_TTL });
     return NextResponse.json(result);
   } catch (error) {

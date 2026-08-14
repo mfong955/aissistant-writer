@@ -28,8 +28,14 @@ export function ModelSelector({ selectedModelId, onSelect, onNoApiKey }: ModelSe
         setModels(models);
         onNoApiKey?.(false);
         if (!selectedModelId && models.length > 0) {
-          // Restore previously selected model from localStorage, then preferred defaults
-          const savedId = typeof window !== "undefined" ? localStorage.getItem("aissistant:modelId") : null;
+          // Credits-path users (our system key, our money) always start on the Sonnet
+          // default, ignoring any locally-saved pick from a prior BYOK session — a stale
+          // "I once tried an expensive model" preference shouldn't carry over onto credits
+          // someone paid for. BYOK users keep their saved preference; it costs us nothing
+          // either way, so there's no reason to override their own choice.
+          const usingSystemKey = Boolean(data.usingSystemKey);
+          const savedId =
+            !usingSystemKey && typeof window !== "undefined" ? localStorage.getItem("aissistant:modelId") : null;
           const PREFERRED = [
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-sonnet-4-5",
