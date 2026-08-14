@@ -92,7 +92,22 @@ export function WritingProgress() {
     }
   }
 
-  if (!project) return null;
+  async function hideProgress() {
+    if (!project) return;
+    setOpen(false);
+    const res = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...(project.settings ?? {}), writingProgressHidden: true } }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { project: Project };
+      setProject(data.project);
+    }
+  }
+
+  const isHidden = Boolean((project?.settings as { writingProgressHidden?: boolean } | undefined)?.writingProgressHidden);
+  if (!project || isHidden) return null;
 
   const dailyProgress = goals.daily && stats ? Math.min(100, Math.round((stats.wordsToday / goals.daily) * 100)) : null;
   const totalProgress =
@@ -203,6 +218,13 @@ export function WritingProgress() {
                     <Button size="sm" className="h-7 w-full text-xs" disabled={saving} onClick={saveGoals}>
                       {saving ? "Saving…" : "Save goals"}
                     </Button>
+                    <button
+                      type="button"
+                      className="w-full text-center text-[11px] text-muted-foreground underline"
+                      onClick={hideProgress}
+                    >
+                      Hide this — not everyone wants to see it. Turn it back on in Project Settings.
+                    </button>
                   </div>
                 </div>
               </>

@@ -33,6 +33,7 @@ export function ProjectSettingsDialog({ children }: { children: React.ReactNode 
   const [description, setDescription] = React.useState("");
   const [projectType, setProjectType] = React.useState<ProjectType | "">("");
   const [instructions, setInstructions] = React.useState("");
+  const [hideWritingProgress, setHideWritingProgress] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -41,6 +42,9 @@ export function ProjectSettingsDialog({ children }: { children: React.ReactNode 
       setDescription(project.description ?? "");
       setProjectType(project.project_type ?? "");
       setInstructions(project.system_instructions ?? "");
+      setHideWritingProgress(
+        Boolean((project.settings as { writingProgressHidden?: boolean } | undefined)?.writingProgressHidden)
+      );
     }
   }, [open, project]);
 
@@ -56,6 +60,7 @@ export function ProjectSettingsDialog({ children }: { children: React.ReactNode 
           description: description.trim() || null,
           project_type: projectType || null,
           system_instructions: instructions.trim() || null,
+          settings: { ...(project.settings ?? {}), writingProgressHidden: hideWritingProgress },
         }),
       });
       const data = (await res.json()) as { project: Project };
@@ -135,6 +140,16 @@ export function ProjectSettingsDialog({ children }: { children: React.ReactNode 
                 The AI reads these before every response. Set tone, style, naming rules, or any project-specific conventions.
               </p>
             </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={!hideWritingProgress}
+                onChange={(e) => setHideWritingProgress(!e.target.checked)}
+              />
+              Show word count and streak in the top bar
+            </label>
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
