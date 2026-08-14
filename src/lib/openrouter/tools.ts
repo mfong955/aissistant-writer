@@ -2,8 +2,9 @@ import type { ToolDefinition } from "./types";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
 import { appendToSessionLog, resolveEntityParent } from "@/lib/db/entities";
+import { dbGetCanvas, dbCreateCanvas, dbUpdateCanvasContent } from "@/lib/db/canvas";
 import { isExplorerRootEntity, type ExplorerRootKey } from "@/lib/entity-roots";
-import type { EntityType } from "@/types/database";
+import type { EntityType, CanvasContent, CanvasNode, CanvasEdge } from "@/types/database";
 
 const EXPLORER_ROOT_KEYS: ExplorerRootKey[] = ["canon", "manuscript", "unsorted"];
 
@@ -92,6 +93,141 @@ export const entityTools: ToolDefinition[] = [
     },
   },
 ];
+
+// A canvas is a visual plot/story-mapping board (docs/canvas-mode.md), never a document.
+// It's separate from the Canon/Manuscript/Unsorted tree and read_entity/create_entity/
+// update_entity refuse to touch it — these are the canvas-specific equivalents. Canvas edits
+// are direct, no confirmation step: the canvas is a sandbox the writer can always undo via its
+// own version history, and nothing here ever writes to the real project until the writer uses
+// the (not yet built) "Apply to Project" step.
+export const canvasTools: ToolDefinition[] = [
+  {
+    type: "function",
+    function: {
+      name: "read_canvas",
+      description:
+        "Read a canvas's full node/edge graph — a visual plot/story board, not a document. Use this before editing a canvas, or when asked to interpret, summarize, or explain one.",
+      parameters: {
+        type: "object",
+        properties: {
+          canvas_id: { type: "string", description: "The ID of the canvas to read (from the Canvases list)" },
+        },
+        required: ["canvas_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_canvas",
+      description:
+        "Create a new canvas — an interactive plot/story-mapping board, kept completely separate from the project's real documents until the writer explicitly applies it (not built yet, so for now it's purely a planning surface). Can be seeded with starter nodes and the connections between them in the same call.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name of the canvas" },
+          nodes: {
+            type: "array",
+            description: "Optional starter nodes, laid out automatically.",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                body: { type: "string", description: "Notes, description, or whatever's relevant for this box." },
+                linked_entity_id: { type: "string", description: "Optional — ties this node to a real project entity by ID, from the Project Files list." },
+                color: { type: "string", description: "Optional hex color, e.g. #3b82f6." },
+              },
+              required: ["title"],
+            },
+          },
+          edges: {
+            type: "array",
+            description: "Optional connections between the nodes above, referenced by their 0-indexed position in the `nodes` array (they don't have real IDs yet within this call).",
+            items: {
+              type: "object",
+              properties: {
+                source_index: { type: "number", description: "Index into `nodes` for the connection's start." },
+                target_index: { type: "number", description: "Index into `nodes` for the connection's end." },
+                label: { type: "string" },
+              },
+              required: ["source_index", "target_index"],
+            },
+          },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_canvas",
+      description:
+        "Edit an existing canvas: add, update, or remove nodes and edges. Pass only what's actually changing. To connect a newly-added node in the same call, reference it in add_edges as \"new:N\" (N = its 0-indexed position in add_nodes) instead of a real ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          canvas_id: { type: "string", description: "The ID of the canvas to edit" },
+          add_nodes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                body: { type: "string" },
+                linked_entity_id: { type: "string" },
+                color: { type: "string" },
+              },
+              required: ["title"],
+            },
+          },
+          update_nodes: {
+            type: "array",
+            description: "Partial updates to existing nodes by ID — only include fields that are changing.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                title: { type: "string" },
+                body: { type: "string" },
+                linked_entity_id: { type: "string" },
+                color: { type: "string" },
+              },
+              required: ["id"],
+            },
+          },
+          remove_node_ids: { type: "array", items: { type: "string" } },
+          add_edges: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                source: { type: "string", description: "A real node ID, or \"new:N\" referencing add_nodes." },
+                target: { type: "string", description: "A real node ID, or \"new:N\" referencing add_nodes." },
+                label: { type: "string" },
+              },
+              required: ["source", "target"],
+            },
+          },
+          remove_edge_ids: { type: "array", items: { type: "string" } },
+        },
+        required: ["canvas_id"],
+      },
+    },
+  },
+];
+
+function layoutPosition(index: number): { x: number; y: number } {
+  return { x: 120 + (index % 4) * 220, y: 120 + Math.floor(index / 4) * 160 };
+}
+
+function resolveNodeRef(ref: string, newNodeIds: string[]): string {
+  if (ref.startsWith("new:")) {
+    const idx = parseInt(ref.slice(4), 10);
+    return newNodeIds[idx] ?? ref;
+  }
+  return ref;
+}
 
 export async function executeToolCall(
   toolName: string,
@@ -301,6 +437,159 @@ export async function executeToolCall(
           success: false,
           result: { error: err instanceof Error ? err.message : "Unknown error" },
           description: `Failed to delete entity ${entityId}`,
+        };
+      }
+    }
+
+    case "read_canvas": {
+      const canvasId = args.canvas_id as string;
+      const canvas = await dbGetCanvas(canvasId, projectId);
+      if (!canvas) {
+        return { success: false, result: { error: "Canvas not found" }, description: `Failed to read canvas ${canvasId}` };
+      }
+      const content = (canvas.content ?? { nodes: [], edges: [] }) as unknown as CanvasContent;
+      return {
+        success: true,
+        result: { canvas_id: canvas.id, name: canvas.name, nodes: content.nodes, edges: content.edges },
+        description: `Read canvas: ${canvas.name} (${content.nodes.length} node(s), ${content.edges.length} edge(s))`,
+      };
+    }
+
+    case "create_canvas": {
+      const name = args.name as string;
+      const rawNodes = (args.nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string }> | undefined) ?? [];
+      const rawEdges = (args.edges as Array<{ source_index: number; target_index: number; label?: string }> | undefined) ?? [];
+
+      try {
+        const canvas = await dbCreateCanvas(projectId, userId, name);
+
+        if (rawNodes.length > 0) {
+          const nodeIds = rawNodes.map(() => crypto.randomUUID());
+          const nodes: CanvasNode[] = rawNodes.map((n, i) => ({
+            id: nodeIds[i],
+            position: layoutPosition(i),
+            title: n.title,
+            body: n.body ?? "",
+            kind: n.linked_entity_id ? "linked" : "freeform",
+            linkedEntityId: n.linked_entity_id,
+            color: n.color,
+          }));
+          const edges: CanvasEdge[] = rawEdges
+            .filter((e) => nodeIds[e.source_index] && nodeIds[e.target_index])
+            .map((e) => ({
+              id: crypto.randomUUID(),
+              source: nodeIds[e.source_index],
+              target: nodeIds[e.target_index],
+              label: e.label,
+            }));
+
+          const result = await dbUpdateCanvasContent(canvas.id, projectId, { nodes, edges }, canvas.version_hash);
+          if (!result.ok) {
+            return {
+              success: false,
+              result: { error: "Canvas was created but changed before its starter nodes could be added — try update_canvas instead." },
+              description: `Created canvas "${name}" but failed to seed it`,
+            };
+          }
+        }
+
+        await appendToSessionLog(projectId, userId, `Created canvas: ${name}`);
+        return {
+          success: true,
+          result: { canvas_id: canvas.id, name, node_count: rawNodes.length },
+          description: `Created canvas: ${name}${rawNodes.length ? ` with ${rawNodes.length} node(s)` : ""}`,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          result: { error: err instanceof Error ? err.message : "Unknown error" },
+          description: `Failed to create canvas: ${name}`,
+        };
+      }
+    }
+
+    case "update_canvas": {
+      const canvasId = args.canvas_id as string;
+      const canvas = await dbGetCanvas(canvasId, projectId);
+      if (!canvas) {
+        return { success: false, result: { error: "Canvas not found" }, description: `Failed to update canvas ${canvasId}` };
+      }
+
+      const content = (canvas.content ?? { nodes: [], edges: [] }) as unknown as CanvasContent;
+      let nodes = [...content.nodes];
+      let edges = [...content.edges];
+
+      const removeNodeIds = new Set((args.remove_node_ids as string[] | undefined) ?? []);
+      if (removeNodeIds.size > 0) {
+        nodes = nodes.filter((n) => !removeNodeIds.has(n.id));
+        edges = edges.filter((e) => !removeNodeIds.has(e.source) && !removeNodeIds.has(e.target));
+      }
+
+      const updateNodes = (args.update_nodes as Array<{ id: string; title?: string; body?: string; color?: string; linked_entity_id?: string }> | undefined) ?? [];
+      for (const upd of updateNodes) {
+        nodes = nodes.map((n) =>
+          n.id === upd.id
+            ? {
+                ...n,
+                title: upd.title ?? n.title,
+                body: upd.body ?? n.body,
+                color: upd.color ?? n.color,
+                linkedEntityId: upd.linked_entity_id ?? n.linkedEntityId,
+                kind: (upd.linked_entity_id ?? n.linkedEntityId) ? "linked" : n.kind,
+              }
+            : n
+        );
+      }
+
+      const addNodes = (args.add_nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string }> | undefined) ?? [];
+      const newNodeIds: string[] = [];
+      addNodes.forEach((n, i) => {
+        const id = crypto.randomUUID();
+        newNodeIds.push(id);
+        nodes.push({
+          id,
+          position: layoutPosition(nodes.length + i),
+          title: n.title,
+          body: n.body ?? "",
+          kind: n.linked_entity_id ? "linked" : "freeform",
+          linkedEntityId: n.linked_entity_id,
+          color: n.color,
+        });
+      });
+
+      const removeEdgeIds = new Set((args.remove_edge_ids as string[] | undefined) ?? []);
+      if (removeEdgeIds.size > 0) edges = edges.filter((e) => !removeEdgeIds.has(e.id));
+
+      const addEdges = (args.add_edges as Array<{ source: string; target: string; label?: string }> | undefined) ?? [];
+      for (const e of addEdges) {
+        edges.push({
+          id: crypto.randomUUID(),
+          source: resolveNodeRef(e.source, newNodeIds),
+          target: resolveNodeRef(e.target, newNodeIds),
+          label: e.label,
+        });
+      }
+
+      try {
+        const result = await dbUpdateCanvasContent(canvasId, projectId, { nodes, edges }, canvas.version_hash);
+        if (!result.ok) {
+          return {
+            success: false,
+            result: { error: "This canvas changed elsewhere just now — read it again before retrying." },
+            description: `Failed to update canvas: ${canvas.name}`,
+          };
+        }
+        await appendToSessionLog(projectId, userId, `Updated canvas: ${canvas.name}`);
+        return {
+          success: true,
+          result: { canvas_id: canvasId, node_count: nodes.length, edge_count: edges.length },
+          description: `Updated canvas: ${canvas.name}`,
+        };
+      } catch (err) {
+        return {
+          success: false,
+          result: { error: err instanceof Error ? err.message : "Unknown error" },
+          description: `Failed to update canvas: ${canvas.name}`,
         };
       }
     }

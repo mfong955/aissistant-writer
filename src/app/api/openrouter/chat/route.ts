@@ -2,7 +2,7 @@ import { getUserId } from "@/lib/get-user-id";
 import { NextResponse } from "next/server";
 import { decryptApiKey } from "@/lib/encryption";
 import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
-import { entityTools, executeToolCall } from "@/lib/openrouter/tools";
+import { entityTools, canvasTools, executeToolCall } from "@/lib/openrouter/tools";
 import { buildContext } from "@/lib/context/context-builder";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { dbGetCredits, dbDeductCredits } from "@/lib/db/billing";
@@ -151,27 +151,31 @@ export async function POST(request: Request) {
   });
 }
 
-async function processChat(params: {
+// Bounded so a model that keeps deciding to call tools can't loop forever — a real risk for
+// "read a few files, then synthesize" tasks. On the final round tools are withheld, forcing a
+// text-only wrap-up rather than another (would-be-empty) tool round.
+const MAX_TOOL_ROUNDS = 8;
+
+async function runCompletionRound(params: {
   apiKey: string;
   messages: ChatCompletionMessage[];
   modelId: string;
-  projectId: string;
-  userId: string;
   controller: ReadableStreamDefaultController;
   encoder: TextEncoder;
-  usesCredits: boolean;
-}): Promise<{ costUsd: number }> {
-  const { apiKey, messages, modelId, projectId, userId, controller, encoder, usesCredits } = params;
-
-  // Summed across the initial generation and the post-tool-call follow-up. Present only
-  // because the request sets `usage: { include: true }`.
-  let costUsd = 0;
+  includeTools: boolean;
+}): Promise<{
+  content: string;
+  toolCalls: Map<number, { id: string; name: string; arguments: string }>;
+  usage: { prompt_tokens: number; completion_tokens: number } | null;
+  costUsd: number;
+}> {
+  const { apiKey, messages, modelId, controller, encoder, includeTools } = params;
 
   const rawStream = await chatCompletion({
     apiKey,
     messages,
     model: modelId,
-    tools: entityTools,
+    tools: includeTools ? [...entityTools, ...canvasTools] : undefined,
     stream: true,
   });
 
@@ -179,9 +183,9 @@ async function processChat(params: {
   const reader = parsedStream.getReader();
 
   let accumulatedContent = "";
-  const accumulatedToolCalls: Map<number, { id: string; name: string; arguments: string }> =
-    new Map();
+  const accumulatedToolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
   let usage: { prompt_tokens: number; completion_tokens: number } | null = null;
+  let costUsd = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -193,9 +197,7 @@ async function processChat(params: {
     if (choice?.delta?.content) {
       accumulatedContent += choice.delta.content;
       controller.enqueue(
-        encoder.encode(
-          `data: ${JSON.stringify({ type: "text", content: choice.delta.content })}\n\n`
-        )
+        encoder.encode(`data: ${JSON.stringify({ type: "text", content: choice.delta.content })}\n\n`)
       );
     }
 
@@ -217,10 +219,65 @@ async function processChat(params: {
     }
   }
 
-  if (accumulatedToolCalls.size > 0) {
-    const toolResults: Array<{ toolCallId: string; result: Record<string, unknown>; description: string }> = [];
+  return { content: accumulatedContent, toolCalls: accumulatedToolCalls, usage, costUsd };
+}
 
-    for (const [, tc] of accumulatedToolCalls) {
+async function processChat(params: {
+  apiKey: string;
+  messages: ChatCompletionMessage[];
+  modelId: string;
+  projectId: string;
+  userId: string;
+  controller: ReadableStreamDefaultController;
+  encoder: TextEncoder;
+  usesCredits: boolean;
+}): Promise<{ costUsd: number }> {
+  const { apiKey, messages, modelId, projectId, userId, controller, encoder, usesCredits } = params;
+
+  let costUsd = 0;
+  let usageTotal: { prompt_tokens: number; completion_tokens: number } | null = null;
+  let currentMessages = messages;
+  let anyToolCallsHappened = false;
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const result = await runCompletionRound({
+      apiKey,
+      messages: currentMessages,
+      modelId,
+      controller,
+      encoder,
+      includeTools: round < MAX_TOOL_ROUNDS,
+    });
+
+    costUsd += result.costUsd;
+    if (result.usage) {
+      usageTotal = usageTotal
+        ? {
+            prompt_tokens: usageTotal.prompt_tokens + result.usage.prompt_tokens,
+            completion_tokens: usageTotal.completion_tokens + result.usage.completion_tokens,
+          }
+        : result.usage;
+    }
+
+    if (result.toolCalls.size === 0) {
+      // No further tool calls — this round's text (if any) is the final answer. If the model
+      // ended the whole exchange with neither text nor a tool call, don't leave the user
+      // staring at a blank message with no way to tell what happened.
+      if (!result.content.trim()) {
+        const message = anyToolCallsHappened
+          ? "The AI used some tools but didn't send a final message afterward — check the tool results above for what changed, or ask it to continue."
+          : "The AI didn't return a response. This can happen with some models — try resending, or switching models in the selector above.";
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "notice", message })}\n\n`)
+        );
+      }
+      break;
+    }
+
+    anyToolCallsHappened = true;
+
+    const toolResults: Array<{ toolCallId: string; result: Record<string, unknown>; description: string }> = [];
+    for (const [, tc] of result.toolCalls) {
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(tc.arguments);
@@ -234,9 +291,8 @@ async function processChat(params: {
         )
       );
 
-      const result = await executeToolCall(tc.name, args, projectId, userId);
-
-      toolResults.push({ toolCallId: tc.id, result: result.result, description: result.description });
+      const toolResult = await executeToolCall(tc.name, args, projectId, userId);
+      toolResults.push({ toolCallId: tc.id, result: toolResult.result, description: toolResult.description });
 
       controller.enqueue(
         encoder.encode(
@@ -244,20 +300,34 @@ async function processChat(params: {
             type: "tool_call_result",
             tool_call_id: tc.id,
             name: tc.name,
-            success: result.success,
-            result: result.result,
-            description: result.description,
+            success: toolResult.success,
+            result: toolResult.result,
+            description: toolResult.description,
           })}\n\n`
         )
       );
     }
 
-    const toolCallMessages: ChatCompletionMessage[] = [
-      ...messages,
+    // Circuit breaker. Tool results up to this point are already applied and streamed to the
+    // client; what's skipped is only further rounds. Never truncates a generation in flight.
+    if (usesCredits && costUsd >= MAX_COST_PER_MESSAGE_USD) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            type: "notice",
+            message: `This message reached the ${formatCredits(usdToCredits(MAX_COST_PER_MESSAGE_USD))} per-message ceiling. Changes made so far were applied, but the AI couldn't continue further. A smaller context or a cheaper model will avoid this.`,
+          })}\n\n`
+        )
+      );
+      break;
+    }
+
+    currentMessages = [
+      ...currentMessages,
       {
         role: "assistant",
-        content: accumulatedContent || null,
-        tool_calls: Array.from(accumulatedToolCalls.values()).map(
+        content: result.content || null,
+        tool_calls: Array.from(result.toolCalls.values()).map(
           (tc): ToolCallResponse => ({
             id: tc.id,
             type: "function",
@@ -273,54 +343,11 @@ async function processChat(params: {
         })
       ),
     ];
-
-    // Circuit breaker. The tool results are already applied and streamed to the client;
-    // what's skipped is only the model's closing summary of what it did. This never
-    // truncates a generation in flight — it declines to start an additional one.
-    if (usesCredits && costUsd >= MAX_COST_PER_MESSAGE_USD) {
-      controller.enqueue(
-        encoder.encode(
-          `data: ${JSON.stringify({
-            type: "notice",
-            message: `This message reached the ${formatCredits(usdToCredits(MAX_COST_PER_MESSAGE_USD))} per-message ceiling. Your changes were applied, but the AI's follow-up summary was skipped. A smaller context or a cheaper model will avoid this.`,
-          })}\n\n`
-        )
-      );
-      return { costUsd };
-    }
-
-    const followUpStream = await chatCompletion({ apiKey, messages: toolCallMessages, model: modelId, stream: true });
-    const followUpParsed = parseSSEStream(followUpStream);
-    const followUpReader = followUpParsed.getReader();
-
-    while (true) {
-      const { done, value } = await followUpReader.read();
-      if (done) break;
-
-      const chunk = value as StreamChunk;
-      const choice = chunk.choices?.[0];
-
-      if (choice?.delta?.content) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "text", content: choice.delta.content })}\n\n`)
-        );
-      }
-
-      if (chunk.usage) {
-        if (usage) {
-          usage.prompt_tokens += chunk.usage.prompt_tokens;
-          usage.completion_tokens += chunk.usage.completion_tokens;
-        } else {
-          usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
-        }
-        costUsd += chunk.usage.cost ?? 0;
-      }
-    }
   }
 
-  if (usage) {
+  if (usageTotal) {
     controller.enqueue(
-      encoder.encode(`data: ${JSON.stringify({ type: "usage", ...usage, cost: costUsd })}\n\n`)
+      encoder.encode(`data: ${JSON.stringify({ type: "usage", ...usageTotal, cost: costUsd })}\n\n`)
     );
   }
 

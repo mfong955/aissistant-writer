@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap } from "lucide-react";
+import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap, Info } from "lucide-react";
 import type { ChatMessageUI } from "@/hooks/use-chat";
 
 interface ChatMessageProps {
@@ -85,6 +85,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </div>
         ))}
+
+        {/* System notice about the exchange itself — never something the model said */}
+        {message.notice && (
+          <div className="flex items-start gap-1.5 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            <span className="leading-relaxed">{message.notice}</span>
+          </div>
+        )}
 
         {/* Token info */}
         {message.promptTokens !== undefined && (

@@ -69,9 +69,13 @@ export async function buildContext(params: {
 
   // Canvases (docs/canvas-mode.md) aren't prose — their `content` is a node/edge graph, not
   // Tiptap JSON, so they must never reach extractTextFromTiptap/tiptapToMarkdown or be offered
-  // to the AI through the prose-oriented read_entity/update_entity tools. Canvas AI access is
-  // its own read_canvas/update_canvas pair, not yet built.
-  const allEntities: Entity[] = ((entityRows ?? []) as Entity[]).filter((e) => e.type !== "canvas");
+  // through the prose-oriented read_entity/update_entity tools. They get their own lightweight
+  // listing below and their own read_canvas/create_canvas/update_canvas tools.
+  const allRows: Entity[] = (entityRows ?? []) as Entity[];
+  const allEntities: Entity[] = allRows.filter((e) => e.type !== "canvas");
+  const canvasList = allRows
+    .filter((e) => e.type === "canvas")
+    .map((e) => ({ id: e.id, name: e.name }));
   const allSummaries: EntitySummary[] = (summaryRows ?? []) as EntitySummary[];
 
   const basePromptTokens = 500;
@@ -175,6 +179,7 @@ export async function buildContext(params: {
     activeEntityContent,
     entityIndex: entityIndexForPrompt,
     workflow: chosenWorkflow,
+    canvases: canvasList.length > 0 ? canvasList : undefined,
   });
 
   return {

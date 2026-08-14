@@ -60,6 +60,7 @@ export function buildSystemPrompt(params: {
   activeEntityContent?: { name: string; type: string; content: string };
   entityIndex?: Array<{ id: string; name: string; type: string; parent_id: string | null }>;
   workflow?: WorkflowDefinition | null;
+  canvases?: Array<{ id: string; name: string }>;
 }): string {
   const sections: string[] = [];
 
@@ -74,6 +75,7 @@ You have access to these tools:
 - create_entity: Create a new project entity (character, chapter, outline, note, world_building, folder, or custom). Every entity must be placed under root="canon", "manuscript", or "unsorted" — see File Organization below
 - update_entity: Update an existing entity's content. Always read_entity first to understand what you're changing (unless the content is already shown below).
 - delete_entity: Delete an entity from the project. Only when the user explicitly asks.
+- read_canvas, create_canvas, update_canvas: for canvases — interactive plot/story-mapping boards of nodes and connections, listed separately under "Canvases" below if any exist. A canvas is never a document: never use read_entity/update_entity on one, and never use create_entity/update_entity to write manuscript prose based on a canvas without the writer asking for that explicitly — canvases are a planning sandbox, kept separate from the project's real files until the writer applies them (not built yet, so for now treat every canvas as purely exploratory). Create one directly when asked to map out a plot/story/outline visually; edit one directly when asked to change it — no confirmation needed for canvas edits themselves, unlike converting canvas content into real project files.
 
 The "Project Files" section below lists all entities in this project with their IDs. When the user mentions an entity by name, find its ID in that list.
 
@@ -123,6 +125,14 @@ Known failure mode of this approach: ${params.workflow.whereItBreaks} — watch 
     });
     sections.push(
       `## Project Files\nUse these IDs with read_entity, update_entity, and delete_entity.\n${indexLines.join("\n")}`
+    );
+  }
+
+  // Canvases — a separate, lightweight list; use read_canvas to see a given one's actual graph
+  if (params.canvases && params.canvases.length > 0) {
+    const canvasLines = params.canvases.map((c) => `- [${c.id}] ${c.name}`);
+    sections.push(
+      `## Canvases\nInteractive plot/story boards, separate from the project's real files. Use these IDs with read_canvas, update_canvas.\n${canvasLines.join("\n")}`
     );
   }
 

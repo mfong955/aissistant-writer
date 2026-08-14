@@ -21,24 +21,22 @@ import { useProject } from "@/contexts/project-context";
 import { getCanvas, updateCanvasContent, saveCanvasCheckpoint } from "@/lib/api/canvases";
 import { CanvasNodePanel } from "./canvas-node-panel";
 import { CanvasVersionHistory } from "./canvas-version-history";
+import { CanvasFlowNode, type CanvasFlowNodeData } from "./canvas-flow-node";
 import type { Entity, CanvasContent, CanvasNode as StoredNode } from "@/types/database";
 
 interface CanvasBoardProps {
   canvasId?: string;
 }
 
-interface NodeData extends Record<string, unknown> {
-  title: string;
-  body: string;
-  kind: "freeform" | "linked";
-  linkedEntityId?: string;
-  color?: string;
-}
+type NodeData = CanvasFlowNodeData;
+
+const NODE_TYPES = { canvasNode: CanvasFlowNode };
 
 function toFlowNodes(nodes: StoredNode[]): Node<NodeData>[] {
   return nodes.map((n) => ({
     id: n.id,
     position: n.position,
+    type: "canvasNode",
     data: { title: n.title, body: n.body, kind: n.kind, linkedEntityId: n.linkedEntityId, color: n.color },
   }));
 }
@@ -148,6 +146,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
     const newNode: Node<NodeData> = {
       id,
       position: { x: 120 + offset, y: 120 + offset },
+      type: "canvasNode",
       data: { title: "New Node", body: "", kind: "freeform" },
     };
     setNodes((nds) => [...nds, newNode]);
@@ -234,6 +233,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={NODE_TYPES}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}

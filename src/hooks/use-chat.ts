@@ -19,6 +19,9 @@ export interface ChatMessageUI {
   cost?: number;
   timestamp: Date;
   outOfCredits?: boolean;
+  /** A system-generated notice about the exchange itself (hit a cost ceiling, ended with no
+   *  response) — distinct from anything the model actually said, and rendered that way. */
+  notice?: string;
 }
 
 export interface ToolCallUI {
@@ -261,6 +264,14 @@ export function useChat({
                   setTotalPromptTokens((prev) => prev + (event.prompt_tokens || 0));
                   setTotalCompletionTokens(
                     (prev) => prev + (event.completion_tokens || 0)
+                  );
+                  break;
+
+                case "notice":
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantId ? { ...m, notice: event.message } : m
+                    )
                   );
                   break;
 

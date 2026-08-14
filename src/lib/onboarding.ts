@@ -110,7 +110,7 @@ export const WORKFLOWS: WorkflowDefinition[] = [
     bestFor: "Returning to an abandoned project.",
     whereItBreaks: "Organizing becomes a way to avoid writing.",
     openingGuidance:
-      "Ask them to drop their existing files into chat so you can extract and organize them. Propose where things fit across Canon/Manuscript/Unsorted rather than filing anything silently. If they're still organizing several turns in with no new writing, gently flag that organizing can become a way to avoid writing.",
+      "Tell them exactly how to bring files in: click the paperclip/attach icon at the bottom-left of the chat box (there's no drag-and-drop yet) to upload a document — PDF, DOCX, or plain text all work. Once something's uploaded, propose where things fit across Canon/Manuscript/Unsorted rather than filing anything silently, and say plainly when a file was too thin to extract much from rather than inventing content to fill the gap. If they're still organizing several turns in with no new writing, gently flag that organizing can become a way to avoid writing.",
     starterPrompts: [
       { label: "What will you do with my files?", prompt: "Explain what happens when I drop my files in — how do you decide what goes where?" },
       { label: "Here's my pile", prompt: "I'll drop my files in now — tell me what you find." },
