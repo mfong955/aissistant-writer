@@ -2,7 +2,7 @@ import { getUserId } from "@/lib/get-user-id";
 import { NextResponse } from "next/server";
 import { decryptApiKey } from "@/lib/encryption";
 import { chatCompletion, parseSSEStream } from "@/lib/openrouter/client";
-import { entityTools, canvasTools, executeToolCall } from "@/lib/openrouter/tools";
+import { entityTools, canvasTools, interactionTools, executeToolCall } from "@/lib/openrouter/tools";
 import { buildContext } from "@/lib/context/context-builder";
 import { dbGetUserSettings } from "@/lib/db/user-settings";
 import { dbGetCredits, dbDeductCredits } from "@/lib/db/billing";
@@ -191,7 +191,7 @@ async function runCompletionRound(params: {
     apiKey,
     messages,
     model: modelId,
-    tools: includeTools ? [...entityTools, ...canvasTools] : undefined,
+    tools: includeTools ? [...entityTools, ...canvasTools, ...interactionTools] : undefined,
     stream: true,
   });
 
@@ -293,6 +293,7 @@ async function processChat(params: {
     anyToolCallsHappened = true;
 
     const toolResults: Array<{ toolCallId: string; result: Record<string, unknown>; description: string }> = [];
+    let questionAsked: { question: string; options: string[] } | null = null;
     for (const [, tc] of result.toolCalls) {
       let args: Record<string, unknown>;
       try {
@@ -322,6 +323,35 @@ async function processChat(params: {
           })}\n\n`
         )
       );
+
+      if (tc.name === "ask_question" && toolResult.success) {
+        questionAsked = {
+          question: (toolResult.result.question as string) ?? "",
+          options: (toolResult.result.options as string[] | undefined) ?? [],
+        };
+      }
+    }
+
+    // A question always ends the turn here, regardless of what other tools ran alongside it or
+    // how many rounds are left — this is the whole point of the tool: a real stop, not a lean.
+    if (questionAsked) {
+      // Only role+content round-trips to the model on the *next* request (see use-chat.ts's
+      // sendMessage — tool_calls/tool results aren't resent), so without this, a question asked
+      // purely via the tool call (no accompanying prose) would vanish from what the model sees
+      // once the writer replies. Injecting it as text keeps it in the persisted conversation.
+      if (!result.content.trim()) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "text", content: questionAsked.question })}\n\n`)
+        );
+      }
+      if (questionAsked.options.length > 0) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "question", question: questionAsked.question, options: questionAsked.options })}\n\n`
+          )
+        );
+      }
+      break;
     }
 
     // Circuit breaker. Tool results up to this point are already applied and streamed to the

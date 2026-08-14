@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap, Info } from "lucide-react";
+import { User, Bot, Check, X, FileText, RefreshCw, Loader2, Zap, Info, HelpCircle } from "lucide-react";
 import type { ChatMessageUI } from "@/hooks/use-chat";
 
 interface ChatMessageProps {
   message: ChatMessageUI;
+  onQuickReply?: (text: string) => void;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onQuickReply }: ChatMessageProps) {
   if (message.role === "system") {
     return (
       <div className="flex items-start gap-2 border-b border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
@@ -85,6 +86,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </div>
         ))}
+
+        {/* Quick-reply options for an ask_question call — clicking sends that answer as-is */}
+        {message.questionOptions && message.questionOptions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {message.questionOptions.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => onQuickReply?.(opt)}
+                className="rounded-full border px-3 py-1 text-xs hover:border-primary hover:bg-primary/5"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* System notice about the exchange itself — never something the model said */}
         {message.notice && (

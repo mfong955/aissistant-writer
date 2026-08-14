@@ -22,6 +22,9 @@ export interface ChatMessageUI {
   /** A system-generated notice about the exchange itself (hit a cost ceiling, ended with no
    *  response) — distinct from anything the model actually said, and rendered that way. */
   notice?: string;
+  /** Present when the AI called ask_question with a few natural, distinct answers — rendered
+   *  as clickable quick replies. Open-ended questions have no options; the writer just types. */
+  questionOptions?: string[];
 }
 
 export interface ToolCallUI {
@@ -271,6 +274,14 @@ export function useChat({
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantId ? { ...m, notice: event.message } : m
+                    )
+                  );
+                  break;
+
+                case "question":
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantId ? { ...m, questionOptions: event.options } : m
                     )
                   );
                   break;

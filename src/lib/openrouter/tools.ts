@@ -233,6 +233,34 @@ export const canvasTools: ToolDefinition[] = [
   },
 ];
 
+// A deliberate pause point. Without this, the model's only way to get input mid-task was to
+// write a question in prose and hope the turn just... ends there — but with multi-round tool
+// access (route.ts's processChat loop), nothing structurally stops it from instead guessing
+// and continuing to act across rounds. Calling this tool always ends the turn immediately, no
+// matter what round it's in or what other tools were called alongside it (see processChat).
+export const interactionTools: ToolDefinition[] = [
+  {
+    type: "function",
+    function: {
+      name: "ask_question",
+      description:
+        "Pause and ask the writer a clarifying question before continuing — use when a real decision point would meaningfully change what you do next and you genuinely don't have enough information to make a reasonable call yourself. This always stops the turn and waits for their reply; nothing else happens until they answer, so don't reach for it on routine choices — for those, make a reasonable decision yourself and just say what you chose and why. Overusing this is its own failure mode: a writer who wanted to just start typing doesn't want to be interviewed first.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The question, in plain language." },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional short answers shown as clickable buttons — use only when there are a few natural, distinct choices (e.g. picking between named alternatives). Omit entirely for open-ended questions; don't force options onto something that isn't naturally multiple-choice.",
+          },
+        },
+        required: ["question"],
+      },
+    },
+  },
+];
+
 // Canvas layout. Grounded in two bodies of practice: narrative-planning tools (Plottr-style
 // horizontal timelines for chronological beats; swimlanes for parallel arcs/subplots; freeform
 // mind-map clustering for relationship webs) and general node-link diagram legibility research
@@ -731,6 +759,16 @@ export async function executeToolCall(
           description: `Failed to update canvas: ${canvas.name}`,
         };
       }
+    }
+
+    case "ask_question": {
+      const question = args.question as string;
+      const options = (args.options as string[] | undefined) ?? [];
+      return {
+        success: true,
+        result: { question, options },
+        description: `Asked: ${question}`,
+      };
     }
 
     default:

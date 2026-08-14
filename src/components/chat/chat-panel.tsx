@@ -244,7 +244,7 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
         ) : (
           <>
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage key={msg.id} message={msg} onQuickReply={(text) => sendMessage(text)} />
             ))}
             {isStreaming && (() => {
               const last = messages[messages.length - 1];
