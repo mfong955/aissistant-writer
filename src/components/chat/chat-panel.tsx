@@ -301,6 +301,7 @@ export function ChatPanelContent({ activeEntityIds, onEntityChange }: ChatPanelC
           isStreaming={isStreaming}
           disabled={!modelId}
           entities={entities.filter((e) => e.type !== "folder" && e.type !== "image")}
+          history={messages.filter((m) => m.role === "user").map((m) => m.content)}
         />
       </div>
     </div>

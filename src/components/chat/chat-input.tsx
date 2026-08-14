@@ -24,6 +24,8 @@ interface ChatInputProps {
   isStreaming: boolean;
   disabled?: boolean;
   entities?: Entity[];
+  /** Previously sent messages in this conversation, oldest first — recalled with ↑/↓. */
+  history?: string[];
 }
 
 export function ChatInput({
@@ -32,6 +34,7 @@ export function ChatInput({
   isStreaming,
   disabled,
   entities,
+  history = [],
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -39,6 +42,8 @@ export function ChatInput({
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const historyDraftRef = useRef("");
   const mentionFromText = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -137,11 +142,15 @@ export function ChatInput({
     setShowLinkInput(false);
     setLinkInput("");
     setMentionQuery(null);
+    setHistoryIndex(null);
+    historyDraftRef.current = "";
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setInput(val);
+    // Manual edits mean they're no longer browsing recall history — the next ↑ starts fresh.
+    setHistoryIndex(null);
 
     const cursor = e.target.selectionStart ?? val.length;
     const before = val.slice(0, cursor);
@@ -181,6 +190,29 @@ export function ChatInput({
         return;
       }
     }
+    // Recall previously sent messages — only when there's nothing typed yet (or we're already
+    // mid-recall), so this never hijacks normal cursor movement inside multi-line text.
+    if (e.key === "ArrowUp" && history.length > 0 && (input === "" || historyIndex !== null)) {
+      e.preventDefault();
+      if (historyIndex === null) historyDraftRef.current = input;
+      const nextIndex = historyIndex === null ? 0 : Math.min(historyIndex + 1, history.length - 1);
+      setHistoryIndex(nextIndex);
+      setInput(history[history.length - 1 - nextIndex]);
+      return;
+    }
+    if (e.key === "ArrowDown" && historyIndex !== null) {
+      e.preventDefault();
+      const nextIndex = historyIndex - 1;
+      if (nextIndex < 0) {
+        setHistoryIndex(null);
+        setInput(historyDraftRef.current);
+      } else {
+        setHistoryIndex(nextIndex);
+        setInput(history[history.length - 1 - nextIndex]);
+      }
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
