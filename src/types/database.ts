@@ -45,6 +45,25 @@ export interface Entity {
   properties: Record<string, unknown>;
   sort_order: number;
   version_hash: string | null;
+  /** Kept in lockstep with `content` — see docs/writing-goals.md §1. */
+  word_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Progress toward a project's word-count goals — see docs/writing-goals.md §2. */
+export interface WritingGoals {
+  daily?: number;
+  total?: { words: number; deadline?: string };
+}
+
+/** One row per project per day. See docs/writing-goals.md §1. */
+export interface DailyWritingStats {
+  id: string;
+  project_id: string;
+  user_id: string;
+  date: string;
+  words_delta: number;
   created_at: string;
   updated_at: string;
 }

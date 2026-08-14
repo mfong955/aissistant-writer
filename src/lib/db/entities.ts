@@ -1,8 +1,45 @@
 import { getAdminClient } from "@/lib/supabase/admin";
 import type { Entity, EntityType, ProjectType } from "@/types/database";
-import { textToTiptapJson, extractTextFromTiptap, replaceTextInTiptapDoc } from "@/lib/tiptap-utils";
+import { textToTiptapJson, extractTextFromTiptap, replaceTextInTiptapDoc, countWords } from "@/lib/tiptap-utils";
 import { PROJECT_TEMPLATES, getTemplatesForType } from "@/lib/templates";
 import { EXPLORER_ROOTS, reservedRootTag, type ExplorerRootKey } from "@/lib/entity-roots";
+
+/**
+ * Accumulates a word-count delta into today's row for the project (docs/writing-goals.md §1).
+ * Read-then-write, not an atomic increment — an acceptable simplicity trade-off for a
+ * best-effort motivational stat, not financial data; a lost delta from two near-simultaneous
+ * saves is not worth a Postgres function to prevent.
+ */
+async function recordWordCountDelta(projectId: string, userId: string, delta: number): Promise<void> {
+  if (delta === 0) return;
+  const supabase = getAdminClient();
+  const today = new Date().toISOString().split("T")[0]!;
+  const now = new Date().toISOString();
+
+  const { data: existing } = await supabase
+    .from("daily_writing_stats")
+    .select("id, words_delta")
+    .eq("project_id", projectId)
+    .eq("date", today)
+    .single() as unknown as { data: { id: string; words_delta: number } | null; error: null };
+
+  if (existing) {
+    await supabase
+      .from("daily_writing_stats")
+      .update({ words_delta: existing.words_delta + delta, updated_at: now })
+      .eq("id", existing.id);
+  } else {
+    await supabase.from("daily_writing_stats").insert({
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      user_id: userId,
+      date: today,
+      words_delta: delta,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+}
 
 /**
  * Ensures a single fixed explorer root (Canon / Manuscript / Unsorted) exists for a project.
@@ -245,6 +282,7 @@ export async function dbCreateEntity(params: {
   const maxSort = siblings?.[0]?.sort_order as number | undefined;
   const sortOrder = maxSort != null ? maxSort + 1 : 0;
   const now = new Date().toISOString();
+  const wordCount = countWords(params.content ?? null);
 
   const { data, error } = await supabase
     .from("entities")
@@ -258,12 +296,14 @@ export async function dbCreateEntity(params: {
       content: params.content ?? null,
       properties: {},
       sort_order: sortOrder,
+      word_count: wordCount,
       created_at: now,
       updated_at: now,
     })
     .select()
     .single();
   if (error) throw error;
+  if (wordCount !== 0) await recordWordCountDelta(params.projectId, params.userId, wordCount);
   return data as Entity;
 }
 
@@ -273,14 +313,39 @@ export async function dbUpdateEntity(
   updates: Partial<Pick<Entity, "name" | "content" | "properties" | "sort_order" | "parent_id" | "version_hash">>
 ): Promise<Entity | null> {
   if (Object.keys(updates).length === 0) return dbGetEntity(id, projectId);
-  const { data, error } = await getAdminClient()
+
+  const supabase = getAdminClient();
+  let wordCountUpdate: { word_count: number; delta: number; userId: string } | null = null;
+
+  if (updates.content !== undefined) {
+    const { data: existing } = await supabase
+      .from("entities")
+      .select("word_count, user_id")
+      .eq("id", id)
+      .eq("project_id", projectId)
+      .single() as unknown as { data: { word_count: number; user_id: string } | null; error: null };
+
+    if (existing) {
+      const newCount = countWords(updates.content);
+      wordCountUpdate = { word_count: newCount, delta: newCount - (existing.word_count ?? 0), userId: existing.user_id };
+    }
+  }
+
+  const { data, error } = await supabase
     .from("entities")
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({
+      ...updates,
+      ...(wordCountUpdate ? { word_count: wordCountUpdate.word_count } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .eq("project_id", projectId)
     .select()
     .single();
   if (error) return null;
+  if (wordCountUpdate && wordCountUpdate.delta !== 0) {
+    await recordWordCountDelta(projectId, wordCountUpdate.userId, wordCountUpdate.delta);
+  }
   return data as Entity;
 }
 

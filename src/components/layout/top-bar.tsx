@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useProject } from "@/contexts/project-context";
 import { ProjectSettingsDialog } from "@/components/project/project-settings-dialog";
 import { ProjectExportMenu } from "@/components/project/project-export-menu";
+import { WritingProgress } from "./writing-progress";
 
 export type ProjectMode = "explorer" | "canvas";
 
@@ -50,6 +51,7 @@ export function TopBar({ mode, onModeChange }: TopBarProps) {
         </button>
       </div>
       <div className="ml-auto flex items-center gap-1">
+        <WritingProgress />
         <Button
           variant="ghost" size="sm"
           className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hidden sm:flex"

@@ -368,3 +368,11 @@ export function extractTextFromTiptap(content: Record<string, unknown>): string 
   walk(content);
   return parts.join("").trim();
 }
+
+/** Word count for a Tiptap document — see docs/writing-goals.md §1. */
+export function countWords(content: Record<string, unknown> | null): number {
+  if (!content) return 0;
+  const text = extractTextFromTiptap(content);
+  if (!text) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
+}

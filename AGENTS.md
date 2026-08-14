@@ -100,7 +100,7 @@ Requires a Supabase project with the migrations in `supabase/migrations/` applie
 3. Rewrite README.md for the actual product
 4. Tauri desktop wrapper (Electron shell exists; Tauri was the original target)
 
-**Known problem:** **migration `005_canvas_mode.sql` still needs to be applied to Supabase** — until then, canvas mode (and therefore anything the new Apply flow proposes from a canvas) doesn't work end to end.
+**Known problem:** **migrations `005_canvas_mode.sql` and `006_writing_goals.sql` still need to be applied to Supabase** — until then, canvas mode (and anything Apply proposes from a canvas) and writing-goals tracking don't work end to end.
 
 **Also under discussion, not yet built:**
 - **Idea-partner discoverability nudge** — a small, dismissible inline prompt in the editor ("Stuck? Ask the AI for ideas →") to teach that chat is also for getting unstuck, not just organizing. Deliberately *not* a persistent toolbar button, to avoid bifurcating "chat" and "ideas" into two things a stuck writer has to choose between. Designed trigger: fires once per project, the first time a **Manuscript** entity is opened empty and stays empty for ~10–15s with no keystrokes; cancels if they start typing; never repeats for that project once shown (`projects.settings.ideaNudgeShown`). Not implemented yet — confirm before building.
@@ -208,6 +208,11 @@ Options considered: a dedicated consistency-check tool vs. extending `propose_pl
 Chose: extended `propose_plan` (`source: "consistency"`, `action` gains `"flag"` for findings with no confident fix) instead of a new tool; scoped v1 to the entity open in the editor against Canon, not a full-project sweep
 Reasoning: a consistency finding is structurally the same as a plan item — a discrepancy with an optional proposed fix, reviewed and approved the same way. Building a second tool/UI for the same shape would be pure duplication. `flag` was the one real gap: not every finding has an obvious fix, and forcing the model to always propose one risks inventing content it isn't confident about — the same failure mode `docs/onboarding-workflows.md` §4 already rejected for imports. Scoping to the open entity rather than the whole manuscript isn't a compromise — Canon is already always in context (the explorer-roots "lookup, not relevance-scored" work) and the active entity is already injected as "Currently Editing," so this version of the check costs zero additional tool calls. A full-manuscript sweep would mean reading every Manuscript entity individually, easily exceeding `MAX_TOOL_ROUNDS` and costing real money on every run — a genuine v2 problem, deliberately not designed here. Full design in `docs/consistency-checking.md`. Status: built.
 
+**[2026-08-14] Writing goals — word count is a historical journal, not a live gauge**
+Options considered: live-recompute "total words" by summing entity content on demand vs. accumulating daily deltas that persist independent of later edits/deletions; scope word-count tracking to Manuscript-rooted entities only vs. every entity
+Chose: word-count deltas accumulate into a small `daily_writing_stats` table (one row per project per day) at the single point content actually changes (`dbCreateEntity`/`dbUpdateEntity`), and a deleted entity's past contribution is never retroactively subtracted. Scoped to every entity for v1, not Manuscript-only.
+Reasoning: this is the Attic philosophy (`docs/onboarding-workflows.md` §5 — nothing is ever destroyed) applied to progress tracking — a cut scene was still real effort, and a "total" that shrinks the moment something is deleted would actively demoralize exactly the writers this feature exists to help. Every-entity scope (not Manuscript-only) trades a small amount of precision for avoiding a root-resolution lookup on every single save; Canon/Unsorted edits are expected to be rare and small relative to actual drafting, so the impurity should be minor in practice — flagged as a v2 revisit if real usage shows otherwise. "Goals" was already named as a core promise in AGENTS.md's own Goal section (session-tracking bullet) with nothing built behind it. Full design in `docs/writing-goals.md`. Status: built. **Migration `006_writing_goals.sql` still needs to be applied to Supabase.**
+
 ### Architecture
 
 **High-level component diagram:**
@@ -304,6 +309,7 @@ All project context lives in this file until the project grows enough to warrant
 | Canvas mode (visual plot/story mapping) | `docs/canvas-mode.md` — fully built, including apply-to-project via `docs/apply-flow.md`. Migration `005_canvas_mode.sql` still needs to be applied to Supabase |
 | Apply flow (canvas/import → real project, reviewed) | `docs/apply-flow.md` — built |
 | Consistency checking (AI flags contradictions vs. Canon) | `docs/consistency-checking.md` — built, reuses propose_plan |
+| Writing goals & progress tracking (word counts, streaks) | `docs/writing-goals.md` — built. Migration `006_writing_goals.sql` needs to be applied to Supabase |
 | Credit math, markup, and cost ceilings | `src/lib/billing/credits.ts` (single source of truth, commented) |
 | Assistant behavior guidelines | Assistant Guidelines section below |
 | Development principles | Development Principles section below |
