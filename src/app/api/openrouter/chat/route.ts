@@ -35,53 +35,69 @@ export async function POST(request: Request) {
     );
   }
 
-  const settings = await dbGetUserSettings(userId);
+  // Everything up to the stream itself is pre-flight setup — a synchronous failure anywhere
+  // in here previously fell through to Next.js's own error page (HTML/plain text, not JSON),
+  // which is exactly what produced "Unexpected token 'I', 'Internal S'... is not valid JSON"
+  // on the client: the frontend always expects JSON or an SSE stream, never gets either, and
+  // the real error never even reaches the UI. Wrapping this guarantees a JSON body either way,
+  // and logs server-side so the actual cause is visible in the dev server's own output.
   let apiKey: string;
   let usesCredits = false;
+  let contextResult: Awaited<ReturnType<typeof buildContext>>;
 
-  if (settings?.openrouter_api_key_encrypted) {
-    // BYOK path: user's own key, billed by their provider. No credit accounting at all.
-    try {
-      apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
-    } catch {
-      return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
-    }
-  } else {
-    // Credits path: system key, charged at actual usage after the response completes.
-    const systemKey = process.env.OPENROUTER_SYSTEM_API_KEY;
-    if (!systemKey) {
-      return new Response(
-        JSON.stringify({ error: "No API key configured. Add your OpenRouter key in Settings." }),
-        { status: 400 }
-      );
+  try {
+    const settings = await dbGetUserSettings(userId);
+
+    if (settings?.openrouter_api_key_encrypted) {
+      // BYOK path: user's own key, billed by their provider. No credit accounting at all.
+      try {
+        apiKey = await decryptApiKey(settings.openrouter_api_key_encrypted);
+      } catch {
+        return new Response(JSON.stringify({ error: "Failed to decrypt API key" }), { status: 500 });
+      }
+    } else {
+      // Credits path: system key, charged at actual usage after the response completes.
+      const systemKey = process.env.OPENROUTER_SYSTEM_API_KEY;
+      if (!systemKey) {
+        return new Response(
+          JSON.stringify({ error: "No API key configured. Add your OpenRouter key in Settings." }),
+          { status: 400 }
+        );
+      }
+
+      // Pre-flight floor. Cost isn't known until the generation finishes, so this is what
+      // prevents a nearly-empty balance from going deeply negative on one expensive message.
+      const balance = await dbGetCredits(userId);
+      if (balance < MIN_BALANCE_TO_START) {
+        return new Response(
+          JSON.stringify({
+            error: "insufficient_credits",
+            message: `Your balance is ${formatCredits(balance)}, which is too low to start a message. Add credits in Settings, or connect your own OpenRouter key to use the app for free.`,
+          }),
+          { status: 402 }
+        );
+      }
+      apiKey = systemKey;
+      usesCredits = true;
     }
 
-    // Pre-flight floor. Cost isn't known until the generation finishes, so this is what
-    // prevents a nearly-empty balance from going deeply negative on one expensive message.
-    const balance = await dbGetCredits(userId);
-    if (balance < MIN_BALANCE_TO_START) {
-      return new Response(
-        JSON.stringify({
-          error: "insufficient_credits",
-          message: `Your balance is ${formatCredits(balance)}, which is too low to start a message. Add credits in Settings, or connect your own OpenRouter key to use the app for free.`,
-        }),
-        { status: 402 }
-      );
-    }
-    apiKey = systemKey;
-    usesCredits = true;
+    const lastUserMessage = messages.filter((m) => m.role === "user").pop();
+    contextResult = await buildContext({
+      projectId: project_id,
+      userId,
+      userMessage: (Array.isArray(lastUserMessage?.content)
+        ? lastUserMessage.content.find((p) => p.type === "text")?.text
+        : lastUserMessage?.content) || "",
+      activeEntityIds: active_entity_ids || [],
+      contextLimit: context_limit || 128000,
+    });
+  } catch (error) {
+    console.error("[POST /api/openrouter/chat] setup failed:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Failed to prepare chat request" }),
+      { status: 500 }
+    );
   }
-
-  const lastUserMessage = messages.filter((m) => m.role === "user").pop();
-  const contextResult = await buildContext({
-    projectId: project_id,
-    userId,
-    userMessage: (Array.isArray(lastUserMessage?.content)
-      ? lastUserMessage.content.find((p) => p.type === "text")?.text
-      : lastUserMessage?.content) || "",
-    activeEntityIds: active_entity_ids || [],
-    contextLimit: context_limit || 128000,
-  });
 
   const fullMessages: ChatCompletionMessage[] = [
     { role: "system", content: contextResult.systemPrompt },
