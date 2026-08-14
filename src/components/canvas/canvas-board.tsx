@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -26,6 +26,7 @@ import { CanvasNodePanel } from "./canvas-node-panel";
 import { CanvasEdgePanel } from "./canvas-edge-panel";
 import { CanvasVersionHistory } from "./canvas-version-history";
 import { CanvasFlowNode, type CanvasFlowNodeData } from "./canvas-flow-node";
+import { CanvasFrameNode, type CanvasFrameNodeType } from "./canvas-frame-node";
 import type { Entity, CanvasContent, CanvasNode as StoredNode } from "@/types/database";
 
 interface CanvasBoardProps {
@@ -34,7 +35,44 @@ interface CanvasBoardProps {
 
 type NodeData = CanvasFlowNodeData;
 
-const NODE_TYPES = { canvasNode: CanvasFlowNode };
+const NODE_TYPES = { canvasNode: CanvasFlowNode, frame: CanvasFrameNode };
+
+// Rough rendered size of a node — just enough for frame padding to look right, not pixel-exact.
+const APPROX_NODE_WIDTH = 220;
+const APPROX_NODE_HEIGHT = 100;
+const FRAME_PADDING = 40;
+const FRAME_LABEL_SPACE = 28;
+
+/** Derives labeled backdrop frames from current node positions — see canvas-frame-node.tsx. */
+function computeFrames(nodes: Node<NodeData>[]): CanvasFrameNodeType[] {
+  const groups = new Map<string, Node<NodeData>[]>();
+  for (const n of nodes) {
+    const key = n.data.lane ? `lane:${n.data.lane}` : n.data.group ? `group:${n.data.group}` : null;
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(n);
+  }
+
+  const frames: CanvasFrameNodeType[] = [];
+  for (const [key, members] of groups) {
+    const minX = Math.min(...members.map((m) => m.position.x));
+    const minY = Math.min(...members.map((m) => m.position.y));
+    const maxX = Math.max(...members.map((m) => m.position.x)) + APPROX_NODE_WIDTH;
+    const maxY = Math.max(...members.map((m) => m.position.y)) + APPROX_NODE_HEIGHT;
+    const width = maxX - minX + FRAME_PADDING * 2;
+    const height = maxY - minY + FRAME_PADDING * 2 + FRAME_LABEL_SPACE;
+    frames.push({
+      id: `frame-${key}`,
+      type: "frame",
+      position: { x: minX - FRAME_PADDING, y: minY - FRAME_PADDING - FRAME_LABEL_SPACE },
+      data: { label: key.slice(key.indexOf(":") + 1), width, height },
+      draggable: false,
+      selectable: false,
+      zIndex: -1,
+    });
+  }
+  return frames;
+}
 
 function toFlowNodes(nodes: StoredNode[]): Node<NodeData>[] {
   return nodes.map((n) => ({
@@ -230,6 +268,8 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
   }
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const frameNodes = useMemo(() => computeFrames(nodes), [nodes]);
+  const renderedNodes = useMemo(() => [...frameNodes, ...nodes], [frameNodes, nodes]);
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
   if (!canvasId) {
@@ -290,7 +330,12 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
 
         <div className="flex-1">
           <ReactFlow
-            nodes={nodes}
+            // Frame backdrops are a different node-data shape (label/width/height, not
+            // title/body/kind) rendered by their own component — React Flow supports mixed
+            // node types at runtime, but typing every handler for the union isn't worth it
+            // for nodes that are draggable:false/selectable:false and never round-trip
+            // through onNodesChange in a way that touches CanvasFlowNodeData's fields.
+            nodes={renderedNodes as Node<NodeData>[]}
             edges={edges}
             nodeTypes={NODE_TYPES}
             onNodesChange={handleNodesChange}
