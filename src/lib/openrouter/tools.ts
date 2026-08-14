@@ -121,21 +121,33 @@ export const canvasTools: ToolDefinition[] = [
     function: {
       name: "create_canvas",
       description:
-        "Create a new canvas — an interactive plot/story-mapping board, kept completely separate from the project's real documents until the writer explicitly applies it (not built yet, so for now it's purely a planning surface). Can be seeded with starter nodes and the connections between them in the same call.",
+        "Create a new canvas — an interactive plot/story-mapping board, kept completely separate from the project's real documents until the writer explicitly applies it (not built yet, so for now it's purely a planning surface). Can be seeded with starter nodes and the connections between them in the same call. Pick `layout` based on what the content actually is — don't default to a plain grid for anything that has real structure: " +
+        "'timeline' — chronological plot beats/events; order the `nodes` array chronologically and it lays out left-to-right automatically. " +
+        "'lanes' — parallel storylines, character arcs, or subplot threads that need to be compared side by side across the same span of time; give each node a `lane` (e.g. a character or subplot name) and same-lane nodes form a row. " +
+        "'cluster' — relationship webs, factions, or thematic groupings with no inherent order; give each node a `group` and same-group nodes stay spatially close together. " +
+        "'grid' — genuinely unordered freeform notes only; this is not a good default for anything with real chronology or grouping. " +
+        "Also: use a consistent color per category across the whole canvas (e.g. every character node the same color, every plot-point node another) rather than random colors per node — color should mean something, and label edges (e.g. 'leads to', 'betrays', 'loves') whenever the relationship type isn't obvious from context alone.",
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "Name of the canvas" },
+          layout: {
+            type: "string",
+            enum: ["timeline", "lanes", "cluster", "grid"],
+            description: "How to lay out the starter nodes. See tool description for when to use each — pick based on the actual structure of the content, not by default.",
+          },
           nodes: {
             type: "array",
-            description: "Optional starter nodes, laid out automatically.",
+            description: "Optional starter nodes, laid out automatically per `layout`.",
             items: {
               type: "object",
               properties: {
                 title: { type: "string" },
                 body: { type: "string", description: "Notes, description, or whatever's relevant for this box." },
                 linked_entity_id: { type: "string", description: "Optional — ties this node to a real project entity by ID, from the Project Files list." },
-                color: { type: "string", description: "Optional hex color, e.g. #3b82f6." },
+                color: { type: "string", description: "Optional hex color, e.g. #3b82f6. Keep it consistent per category across the canvas." },
+                lane: { type: "string", description: "Only meaningful when layout='lanes' — the swimlane this node belongs in (e.g. a character or subplot name)." },
+                group: { type: "string", description: "Only meaningful when layout='cluster' — the cluster this node belongs in (e.g. a faction or theme)." },
               },
               required: ["title"],
             },
@@ -163,7 +175,7 @@ export const canvasTools: ToolDefinition[] = [
     function: {
       name: "update_canvas",
       description:
-        "Edit an existing canvas: add, update, or remove nodes and edges. Pass only what's actually changing. To connect a newly-added node in the same call, reference it in add_edges as \"new:N\" (N = its 0-indexed position in add_nodes) instead of a real ID.",
+        "Edit an existing canvas: add, update, or remove nodes and edges. Pass only what's actually changing. To connect a newly-added node in the same call, reference it in add_edges as \"new:N\" (N = its 0-indexed position in add_nodes) instead of a real ID. New nodes are positioned automatically: give a `lane` or `group` matching an existing node's to place it alongside that structure (e.g. adding one more event to a character's existing timeline row); without one, it's appended clear of everything else. This deliberately never repositions existing nodes — the writer may have manually arranged them, and moving things without being asked is exactly the kind of silent AI behavior to avoid.",
       parameters: {
         type: "object",
         properties: {
@@ -177,6 +189,8 @@ export const canvasTools: ToolDefinition[] = [
                 body: { type: "string" },
                 linked_entity_id: { type: "string" },
                 color: { type: "string" },
+                lane: { type: "string", description: "Match an existing node's lane to place this in the same row." },
+                group: { type: "string", description: "Match an existing node's group to place this in the same cluster." },
               },
               required: ["title"],
             },
@@ -192,6 +206,8 @@ export const canvasTools: ToolDefinition[] = [
                 body: { type: "string" },
                 linked_entity_id: { type: "string" },
                 color: { type: "string" },
+                lane: { type: "string" },
+                group: { type: "string" },
               },
               required: ["id"],
             },
@@ -217,8 +233,120 @@ export const canvasTools: ToolDefinition[] = [
   },
 ];
 
-function layoutPosition(index: number): { x: number; y: number } {
-  return { x: 120 + (index % 4) * 220, y: 120 + Math.floor(index / 4) * 160 };
+// Canvas layout. Grounded in two bodies of practice: narrative-planning tools (Plottr-style
+// horizontal timelines for chronological beats; swimlanes for parallel arcs/subplots; freeform
+// mind-map clustering for relationship webs) and general node-link diagram legibility research
+// (minimize edge crossings; group related nodes spatially so adjacency does that work for you
+// instead of a crossing-minimization pass; use position and color consistently, not
+// decoratively). No force-directed physics or crossing-minimization solver here — deliberately
+// left out because good grouping already gets most of that benefit for the graph sizes and
+// edge patterns a story-planning canvas actually has (chronological chains, small relationship
+// clusters), and a physics sim would add real complexity for a marginal gain at this scale.
+const GRID_COLS = 4;
+const GRID_SPACING_X = 220;
+const GRID_SPACING_Y = 160;
+const TIMELINE_SPACING_X = 240;
+const TIMELINE_Y = 160;
+const LANE_SPACING_X = 240;
+const LANE_HEIGHT = 180;
+const LANE_ORIGIN_X = 220;
+const LANE_ORIGIN_Y = 100;
+const CLUSTER_COLS = 3;
+const CLUSTER_WIDTH = 700;
+const CLUSTER_HEIGHT = 420;
+const CLUSTER_IN_GROUP_COLS = 2;
+const CLUSTER_IN_GROUP_SPACING_X = 240;
+const CLUSTER_IN_GROUP_SPACING_Y = 160;
+
+type Point = { x: number; y: number };
+
+function layoutGrid(count: number): Point[] {
+  return Array.from({ length: count }, (_, i) => ({
+    x: 120 + (i % GRID_COLS) * GRID_SPACING_X,
+    y: 120 + Math.floor(i / GRID_COLS) * GRID_SPACING_Y,
+  }));
+}
+
+/** Left-to-right in array order = chronological order. For chronological plot beats/events. */
+function layoutTimeline(count: number): Point[] {
+  return Array.from({ length: count }, (_, i) => ({ x: 120 + i * TIMELINE_SPACING_X, y: TIMELINE_Y }));
+}
+
+/** One horizontal row per distinct `lane`, ordered left-to-right within each. For parallel
+ *  storylines/character arcs that need to be compared across the same timeframe. */
+function layoutLanes(items: { lane?: string }[]): Point[] {
+  const laneOrder: string[] = [];
+  const posInLane = new Map<string, number>();
+  return items.map((item) => {
+    const lane = item.lane || "General";
+    if (!laneOrder.includes(lane)) laneOrder.push(lane);
+    const i = posInLane.get(lane) ?? 0;
+    posInLane.set(lane, i + 1);
+    return { x: LANE_ORIGIN_X + i * LANE_SPACING_X, y: LANE_ORIGIN_Y + laneOrder.indexOf(lane) * LANE_HEIGHT };
+  });
+}
+
+/** Nodes sharing a `group` are packed into the same spatial region, distinct groups spread
+ *  across a grid of regions. For relationship webs / thematic clusters with no inherent order. */
+function layoutCluster(items: { group?: string }[]): Point[] {
+  const groupOrder: string[] = [];
+  const posInGroup = new Map<string, number>();
+  return items.map((item) => {
+    const group = item.group || "Ungrouped";
+    if (!groupOrder.includes(group)) groupOrder.push(group);
+    const groupIndex = groupOrder.indexOf(group);
+    const i = posInGroup.get(group) ?? 0;
+    posInGroup.set(group, i + 1);
+    const originX = 100 + (groupIndex % CLUSTER_COLS) * CLUSTER_WIDTH;
+    const originY = 100 + Math.floor(groupIndex / CLUSTER_COLS) * CLUSTER_HEIGHT;
+    return {
+      x: originX + (i % CLUSTER_IN_GROUP_COLS) * CLUSTER_IN_GROUP_SPACING_X,
+      y: originY + Math.floor(i / CLUSTER_IN_GROUP_COLS) * CLUSTER_IN_GROUP_SPACING_Y,
+    };
+  });
+}
+
+function layoutForNewCanvas(
+  layout: string | undefined,
+  items: { lane?: string; group?: string }[]
+): Point[] {
+  if (layout === "timeline") return layoutTimeline(items.length);
+  if (layout === "lanes") return layoutLanes(items);
+  if (layout === "cluster") return layoutCluster(items);
+  return layoutGrid(items.length);
+}
+
+/**
+ * Positions for nodes added to an *existing* canvas via update_canvas. Deliberately doesn't
+ * re-run a full-canvas layout — the writer may have manually dragged nodes around, and silently
+ * undoing that would be exactly the kind of surprising AI behavior the rest of this app goes out
+ * of its way to avoid. Instead: align with existing structure when a lane/group hint points at
+ * something already on the board, otherwise append clear of everything else.
+ */
+function positionForIncrementalAdd(
+  existingNodes: CanvasNode[],
+  hint: { lane?: string; group?: string },
+  indexAmongNew: number
+): Point {
+  if (hint.lane) {
+    const sameLane = existingNodes.filter((n) => n.lane === hint.lane);
+    if (sameLane.length > 0) {
+      return { x: Math.max(...sameLane.map((n) => n.position.x)) + LANE_SPACING_X, y: sameLane[0].position.y };
+    }
+    const maxY = existingNodes.length > 0 ? Math.max(...existingNodes.map((n) => n.position.y)) : LANE_ORIGIN_Y - LANE_HEIGHT;
+    return { x: LANE_ORIGIN_X, y: maxY + LANE_HEIGHT };
+  }
+  if (hint.group) {
+    const sameGroup = existingNodes.filter((n) => n.group === hint.group);
+    if (sameGroup.length > 0) {
+      const avgX = sameGroup.reduce((s, n) => s + n.position.x, 0) / sameGroup.length;
+      const avgY = sameGroup.reduce((s, n) => s + n.position.y, 0) / sameGroup.length;
+      return { x: avgX + 40 * (indexAmongNew + 1), y: avgY + 40 * (indexAmongNew + 1) };
+    }
+  }
+  const maxX = existingNodes.length > 0 ? Math.max(...existingNodes.map((n) => n.position.x)) : 60;
+  const maxY = existingNodes.length > 0 ? Math.max(...existingNodes.map((n) => n.position.y)) : 60;
+  return { x: maxX + TIMELINE_SPACING_X * (indexAmongNew + 1), y: maxY };
 }
 
 function resolveNodeRef(ref: string, newNodeIds: string[]): string {
@@ -457,7 +585,8 @@ export async function executeToolCall(
 
     case "create_canvas": {
       const name = args.name as string;
-      const rawNodes = (args.nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string }> | undefined) ?? [];
+      const layout = args.layout as string | undefined;
+      const rawNodes = (args.nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string; lane?: string; group?: string }> | undefined) ?? [];
       const rawEdges = (args.edges as Array<{ source_index: number; target_index: number; label?: string }> | undefined) ?? [];
 
       try {
@@ -465,14 +594,17 @@ export async function executeToolCall(
 
         if (rawNodes.length > 0) {
           const nodeIds = rawNodes.map(() => crypto.randomUUID());
+          const positions = layoutForNewCanvas(layout, rawNodes);
           const nodes: CanvasNode[] = rawNodes.map((n, i) => ({
             id: nodeIds[i],
-            position: layoutPosition(i),
+            position: positions[i],
             title: n.title,
             body: n.body ?? "",
             kind: n.linked_entity_id ? "linked" : "freeform",
             linkedEntityId: n.linked_entity_id,
             color: n.color,
+            lane: n.lane,
+            group: n.group,
           }));
           const edges: CanvasEdge[] = rawEdges
             .filter((e) => nodeIds[e.source_index] && nodeIds[e.target_index])
@@ -525,7 +657,7 @@ export async function executeToolCall(
         edges = edges.filter((e) => !removeNodeIds.has(e.source) && !removeNodeIds.has(e.target));
       }
 
-      const updateNodes = (args.update_nodes as Array<{ id: string; title?: string; body?: string; color?: string; linked_entity_id?: string }> | undefined) ?? [];
+      const updateNodes = (args.update_nodes as Array<{ id: string; title?: string; body?: string; color?: string; linked_entity_id?: string; lane?: string; group?: string }> | undefined) ?? [];
       for (const upd of updateNodes) {
         nodes = nodes.map((n) =>
           n.id === upd.id
@@ -536,24 +668,31 @@ export async function executeToolCall(
                 color: upd.color ?? n.color,
                 linkedEntityId: upd.linked_entity_id ?? n.linkedEntityId,
                 kind: (upd.linked_entity_id ?? n.linkedEntityId) ? "linked" : n.kind,
+                lane: upd.lane ?? n.lane,
+                group: upd.group ?? n.group,
               }
             : n
         );
       }
 
-      const addNodes = (args.add_nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string }> | undefined) ?? [];
+      // Positioned against existing structure (matching lane/group), never by re-running a
+      // full layout — see positionForIncrementalAdd's own reasoning above.
+      const addNodes = (args.add_nodes as Array<{ title: string; body?: string; linked_entity_id?: string; color?: string; lane?: string; group?: string }> | undefined) ?? [];
       const newNodeIds: string[] = [];
+      const nodesBeforeAdd = nodes;
       addNodes.forEach((n, i) => {
         const id = crypto.randomUUID();
         newNodeIds.push(id);
         nodes.push({
           id,
-          position: layoutPosition(nodes.length + i),
+          position: positionForIncrementalAdd(nodesBeforeAdd, { lane: n.lane, group: n.group }, i),
           title: n.title,
           body: n.body ?? "",
           kind: n.linked_entity_id ? "linked" : "freeform",
           linkedEntityId: n.linked_entity_id,
           color: n.color,
+          lane: n.lane,
+          group: n.group,
         });
       });
 

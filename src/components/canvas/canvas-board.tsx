@@ -13,6 +13,7 @@ import {
   type Node,
   type Edge,
   type NodeMouseHandler,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, Save, History, AlertTriangle, Workflow } from "lucide-react";
@@ -37,7 +38,15 @@ function toFlowNodes(nodes: StoredNode[]): Node<NodeData>[] {
     id: n.id,
     position: n.position,
     type: "canvasNode",
-    data: { title: n.title, body: n.body, kind: n.kind, linkedEntityId: n.linkedEntityId, color: n.color },
+    data: {
+      title: n.title,
+      body: n.body,
+      kind: n.kind,
+      linkedEntityId: n.linkedEntityId,
+      color: n.color,
+      lane: n.lane,
+      group: n.group,
+    },
   }));
 }
 
@@ -55,6 +64,8 @@ function toStoredContent(nodes: Node<NodeData>[], edges: Edge[]): CanvasContent 
       kind: n.data.kind,
       linkedEntityId: n.data.linkedEntityId,
       color: n.data.color,
+      lane: n.data.lane,
+      group: n.data.group,
     })),
     edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: typeof e.label === "string" ? e.label : undefined })),
   };
@@ -74,6 +85,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
   const versionHashRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  const reactFlowRef = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null);
 
   const load = useCallback(async () => {
     if (!canvasId || !project) return;
@@ -148,10 +160,18 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
       position: { x: 120 + offset, y: 120 + offset },
       type: "canvasNode",
       data: { title: "New Node", body: "", kind: "freeform" },
+      // Programmatic add bypasses React Flow's own click-to-select handling, so without this
+      // the new node would neither show the "selected" ring nor be scrolled into view — it'd
+      // exist, but be invisible/indistinguishable, which reads as "nothing happened."
+      selected: true,
     };
-    setNodes((nds) => [...nds, newNode]);
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), newNode]);
     setSelectedNodeId(id);
     scheduleSave();
+    // Bring it into view regardless of current pan/zoom — same reasoning as above.
+    requestAnimationFrame(() => {
+      reactFlowRef.current?.fitView({ nodes: [{ id }], duration: 300, maxZoom: 1.25 });
+    });
   }
 
   function updateSelectedNode(updates: Partial<NodeData>) {
@@ -238,6 +258,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onInit={(instance) => { reactFlowRef.current = instance; }}
             fitView
           >
             <Background />

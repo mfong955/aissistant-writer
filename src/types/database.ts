@@ -60,6 +60,12 @@ export interface CanvasNode {
   linkedEntityId?: string;
   body: string;
   color?: string;
+  /** Structural hints, not display data — used to lay a node out sensibly and to align
+   *  incremental additions with existing structure (e.g. adding a new event to a lane that
+   *  already exists). "lane" = a swimlane row (e.g. one per character/subplot); "group" = a
+   *  spatial cluster (e.g. one per faction/relationship web). At most one is meaningful at a time. */
+  lane?: string;
+  group?: string;
 }
 
 export interface CanvasEdge {

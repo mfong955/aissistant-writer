@@ -10,6 +10,8 @@ export interface CanvasFlowNodeData extends Record<string, unknown> {
   kind: "freeform" | "linked";
   linkedEntityId?: string;
   color?: string;
+  lane?: string;
+  group?: string;
 }
 
 export type CanvasFlowNodeType = Node<CanvasFlowNodeData, "canvasNode">;
