@@ -13,14 +13,17 @@ import {
   type Node,
   type Edge,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Plus, Save, History, AlertTriangle, Workflow } from "lucide-react";
+import { Plus, Save, History, AlertTriangle, Workflow, Map as MapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useProject } from "@/contexts/project-context";
 import { getCanvas, updateCanvasContent, saveCanvasCheckpoint } from "@/lib/api/canvases";
 import { CanvasNodePanel } from "./canvas-node-panel";
+import { CanvasEdgePanel } from "./canvas-edge-panel";
 import { CanvasVersionHistory } from "./canvas-version-history";
 import { CanvasFlowNode, type CanvasFlowNodeData } from "./canvas-flow-node";
 import type { Entity, CanvasContent, CanvasNode as StoredNode } from "@/types/database";
@@ -78,7 +81,9 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showMiniMap, setShowMiniMap] = useState(true);
   const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -92,6 +97,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
     setLoading(true);
     setConflict(false);
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
     const canvas = await getCanvas(canvasId, project.id);
     if (canvas) {
       const content = (canvas.content ?? { nodes: [], edges: [] }) as unknown as CanvasContent;
@@ -150,6 +156,17 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const onEdgeClick: EdgeMouseHandler = useCallback((_e, edge) => {
+    setSelectedEdgeId(edge.id);
+    setSelectedNodeId(null);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
   }, []);
 
   function addNode() {
@@ -188,6 +205,19 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
     scheduleSave();
   }
 
+  function updateSelectedEdgeLabel(label: string) {
+    if (!selectedEdgeId) return;
+    setEdges((eds) => eds.map((e) => (e.id === selectedEdgeId ? { ...e, label } : e)));
+    scheduleSave();
+  }
+
+  function deleteSelectedEdge() {
+    if (!selectedEdgeId) return;
+    setEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
+    setSelectedEdgeId(null);
+    scheduleSave();
+  }
+
   async function checkpoint() {
     if (!canvasId || !project) return;
     const content = toStoredContent(nodes, edges);
@@ -200,6 +230,7 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
   }
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
   if (!canvasId) {
     return (
@@ -232,6 +263,14 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
           >
             <History className="h-3.5 w-3.5" /> History
           </Button>
+          <Button
+            variant="ghost" size="sm"
+            className={cn("h-7 gap-1.5 text-xs", showMiniMap && "bg-accent")}
+            onClick={() => setShowMiniMap((v) => !v)}
+            title={showMiniMap ? "Hide minimap" : "Show minimap"}
+          >
+            <MapIcon className="h-3.5 w-3.5" /> Map
+          </Button>
           <span className="ml-auto text-[11px] text-muted-foreground">
             {saving ? "Saving…" : "Never propagates to your project until you apply it"}
           </span>
@@ -258,12 +297,14 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onPaneClick={onPaneClick}
             onInit={(instance) => { reactFlowRef.current = instance; }}
             fitView
           >
             <Background />
             <Controls />
-            <MiniMap pannable zoomable />
+            {showMiniMap && <MiniMap pannable zoomable />}
           </ReactFlow>
         </div>
       </div>
@@ -283,6 +324,15 @@ export function CanvasBoard({ canvasId }: CanvasBoardProps) {
           onChange={updateSelectedNode}
           onDelete={deleteSelectedNode}
           onClose={() => setSelectedNodeId(null)}
+        />
+      )}
+
+      {selectedEdge && (
+        <CanvasEdgePanel
+          edge={{ id: selectedEdge.id, label: typeof selectedEdge.label === "string" ? selectedEdge.label : undefined }}
+          onChange={updateSelectedEdgeLabel}
+          onDelete={deleteSelectedEdge}
+          onClose={() => setSelectedEdgeId(null)}
         />
       )}
 
