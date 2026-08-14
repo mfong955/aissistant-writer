@@ -10,7 +10,7 @@ const EXPLORER_ROOT_KEYS: ExplorerRootKey[] = ["canon", "manuscript", "unsorted"
 
 interface PlanItem {
   id: string;
-  action: "create" | "update";
+  action: "create" | "update" | "flag";
   name?: string;
   type?: string;
   root?: string;
@@ -105,6 +105,10 @@ export async function POST(request: Request) {
         await appendToSessionLog(project_id, userId, `Applied plan: updated ${entity.type}: ${entity.name}`);
 
         results.push({ id: item.id, success: true, entity_id: entity.id });
+      } else if (item.action === "flag") {
+        // Flags are informational only (docs/consistency-checking.md §1) — the review card
+        // never sends them here, but skip cleanly rather than error if one somehow arrives.
+        results.push({ id: item.id, success: true });
       } else {
         throw new Error(`Unknown action "${item.action}"`);
       }

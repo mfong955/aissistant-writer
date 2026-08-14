@@ -264,14 +264,14 @@ export const interactionTools: ToolDefinition[] = [
     function: {
       name: "propose_plan",
       description:
-        "Propose a batch of changes to the real project — creates and updates — for the writer to review and approve item by item before anything is actually written. See docs/apply-flow.md. Use this instead of create_entity/update_entity specifically when you're about to write several things at once AND the content came from somewhere the writer hasn't already seen and typed themselves — applying a canvas, or organizing a document they just uploaded. For a single item, or content the writer is actively dictating to you in this conversation, use create_entity/update_entity directly instead — don't make them review something they basically just told you to do. Like ask_question, this always ends the turn and waits; nothing is written until they respond.",
+        "Propose a batch of changes to the real project — creates, updates, or flagged issues with no proposed fix — for the writer to review and approve item by item before anything is actually written. See docs/apply-flow.md and docs/consistency-checking.md. Use this instead of create_entity/update_entity specifically when you're about to write several things at once AND the content came from somewhere the writer hasn't already seen and typed themselves — applying a canvas, organizing a document they just uploaded, or a consistency check against Canon they asked for (or a clear contradiction you noticed in passing). For a single item, or content the writer is actively dictating to you in this conversation, use create_entity/update_entity directly instead — don't make them review something they basically just told you to do. Like ask_question, this always ends the turn and waits; nothing is written until they respond.",
       parameters: {
         type: "object",
         properties: {
           source: {
             type: "string",
-            enum: ["canvas", "import"],
-            description: "Where this batch came from — which canvas/import triggered it.",
+            enum: ["canvas", "import", "consistency"],
+            description: "Where this batch came from — which canvas/import triggered it, or 'consistency' for a contradiction check against Canon.",
           },
           summary: {
             type: "string",
@@ -279,11 +279,15 @@ export const interactionTools: ToolDefinition[] = [
           },
           items: {
             type: "array",
-            description: "The proposed changes. Each becomes one reviewable row.",
+            description: "The proposed changes or flagged findings. Each becomes one reviewable row.",
             items: {
               type: "object",
               properties: {
-                action: { type: "string", enum: ["create", "update"] },
+                action: {
+                  type: "string",
+                  enum: ["create", "update", "flag"],
+                  description: "flag = a finding with no confident fix — informational only, nothing to apply. Don't force a fix you're not sure of; flag it instead (docs/consistency-checking.md §1).",
+                },
                 name: { type: "string", description: "Required for action=create." },
                 type: {
                   type: "string",
@@ -296,11 +300,13 @@ export const interactionTools: ToolDefinition[] = [
                   description: "Required for action=create — same guidance as create_entity's root param.",
                 },
                 path: { type: "string", description: "Optional folder path within the root, same convention as create_entity." },
-                entity_id: { type: "string", description: "Required for action=update — the entity being changed, from the Project Files list." },
-                content: { type: "string", description: "The proposed content, in plain text." },
-                reason: { type: "string", description: "One line: why this item. E.g. \"appears in 4 scenes, no character sheet yet.\"" },
+                entity_id: { type: "string", description: "Required for action=update — the entity being changed, from the Project Files list. Optional for flag, if the finding points at a specific entity." },
+                content: { type: "string", description: "Required for action=update — the proposed content, in plain text. Omit for flag; there's nothing to apply." },
+                quote: { type: "string", description: "For flag (and useful for update) — the specific passage the finding is about." },
+                established_fact: { type: "string", description: "For flag/update from a consistency check — what Canon actually says, and where." },
+                reason: { type: "string", description: "One line: why this item. E.g. \"appears in 4 scenes, no character sheet yet\" or the contradiction itself in plain language." },
               },
-              required: ["action", "content", "reason"],
+              required: ["action", "reason"],
             },
           },
         },
@@ -827,13 +833,15 @@ export async function executeToolCall(
       const source = args.source as string;
       const summary = args.summary as string;
       const rawItems = (args.items as Array<{
-        action: "create" | "update";
+        action: "create" | "update" | "flag";
         name?: string;
         type?: string;
         root?: string;
         path?: string;
         entity_id?: string;
-        content: string;
+        content?: string;
+        quote?: string;
+        established_fact?: string;
         reason: string;
       }> | undefined) ?? [];
 

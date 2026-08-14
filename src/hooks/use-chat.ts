@@ -32,13 +32,16 @@ export interface ChatMessageUI {
 
 export interface PlanItemUI {
   id: string;
-  action: "create" | "update";
+  action: "create" | "update" | "flag";
   name?: string;
   type?: string;
   root?: string;
   path?: string;
   entity_id?: string;
-  content: string;
+  /** Required for create/update; omitted for flag — there's nothing to apply. */
+  content?: string;
+  quote?: string;
+  established_fact?: string;
   reason?: string;
 }
 
