@@ -174,7 +174,7 @@ export function ProjectExplorer({
 
   async function handleDelete(entityId: string) {
     if (!project) return;
-    if (!confirm("Delete this entity and all its children?")) return;
+    if (!confirm("Move this entity and all its children to the Attic? You can restore it anytime from there.")) return;
     await deleteEntity(entityId, project.id);
     await refreshEntities();
   }

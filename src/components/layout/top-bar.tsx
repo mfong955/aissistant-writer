@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PenLine, Settings, SlidersHorizontal, ChevronLeft, Focus, Search, Workflow } from "lucide-react";
+import { PenLine, Settings, SlidersHorizontal, ChevronLeft, Focus, Search, Workflow, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/contexts/project-context";
 import { ProjectSettingsDialog } from "@/components/project/project-settings-dialog";
+import { AtticDialog } from "@/components/project/attic-dialog";
 import { ProjectExportMenu } from "@/components/project/project-export-menu";
 import { WritingProgress } from "./writing-progress";
 
@@ -63,6 +64,11 @@ export function TopBar({ mode, onModeChange }: TopBarProps) {
           <kbd className="ml-1 rounded border bg-muted px-1 py-0.5 font-sans text-[10px]">⌘K</kbd>
         </Button>
         <ProjectExportMenu />
+        <AtticDialog>
+          <Button variant="ghost" size="icon" title="The Attic — restore deleted items">
+            <Archive className="h-4 w-4" />
+          </Button>
+        </AtticDialog>
         <Button
           variant="ghost" size="icon"
           title="Focus mode (Esc to exit)"

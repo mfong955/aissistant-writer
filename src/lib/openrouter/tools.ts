@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "./types";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { textToTiptapJson, extractTextFromTiptap } from "@/lib/tiptap-utils";
-import { appendToSessionLog, resolveEntityParent } from "@/lib/db/entities";
+import { appendToSessionLog, resolveEntityParent, dbGetEntity, dbUpdateEntity, dbDeleteEntity } from "@/lib/db/entities";
 import { dbGetCanvas, dbCreateCanvas, dbUpdateCanvasContent } from "@/lib/db/canvas";
 import { isExplorerRootEntity, type ExplorerRootKey } from "@/lib/entity-roots";
 import type { EntityType, CanvasContent, CanvasNode, CanvasEdge } from "@/types/database";
@@ -82,7 +82,7 @@ export const entityTools: ToolDefinition[] = [
     function: {
       name: "delete_entity",
       description:
-        "Delete an entity from the project. Use this only when the user explicitly asks to remove an entity.",
+        "Move an entity to the Attic (soft delete, recoverable) along with everything nested under it. Use this only when the user explicitly asks to remove an entity. Nothing is destroyed — the writer can restore it later from the Attic.",
       parameters: {
         type: "object",
         properties: {
@@ -451,12 +451,7 @@ export async function executeToolCall(
   switch (toolName) {
     case "read_entity": {
       const entityId = args.entity_id as string;
-      const { data: entity } = await supabase
-        .from("entities")
-        .select("id, name, type, content")
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .single();
+      const entity = await dbGetEntity(entityId, projectId);
 
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to read entity ${entityId}` };
@@ -541,12 +536,7 @@ export async function executeToolCall(
       const content = textToTiptapJson(args.content as string);
       const now = new Date().toISOString();
 
-      const { data: entity } = await supabase
-        .from("entities")
-        .select("name, type, properties")
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .single();
+      const entity = await dbGetEntity(entityId, projectId);
 
       if (!entity) {
         return { success: false, result: { error: "Entity not found" }, description: `Failed to update entity ${entityId}` };
@@ -569,11 +559,7 @@ export async function executeToolCall(
       const name = (args.name as string | undefined) || entity.name;
 
       try {
-        await supabase
-          .from("entities")
-          .update({ content, name, updated_at: now })
-          .eq("id", entityId)
-          .eq("project_id", projectId);
+        await dbUpdateEntity(entityId, projectId, { content, name });
 
         await supabase.from("change_logs").insert({
           id: crypto.randomUUID(),
@@ -603,12 +589,7 @@ export async function executeToolCall(
 
     case "delete_entity": {
       const entityId = args.entity_id as string;
-      const { data: entity } = await supabase
-        .from("entities")
-        .select("name, type, properties")
-        .eq("id", entityId)
-        .eq("project_id", projectId)
-        .single();
+      const entity = await dbGetEntity(entityId, projectId);
 
       if (entity && isExplorerRootEntity(entity as { properties: Record<string, unknown> })) {
         return {
@@ -619,11 +600,9 @@ export async function executeToolCall(
       }
 
       try {
-        await supabase
-          .from("entities")
-          .delete()
-          .eq("id", entityId)
-          .eq("project_id", projectId);
+        // Soft delete (docs/attic.md) — archives this entity and its whole subtree, recoverable
+        // from the Attic. Never a real hard delete from AI-facing tool calls.
+        await dbDeleteEntity(entityId, projectId);
 
         const now = new Date().toISOString();
         await supabase.from("change_logs").insert({
@@ -633,15 +612,15 @@ export async function executeToolCall(
           entity_id: entityId,
           action: "delete",
           actor: "ai",
-          description: `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`,
+          description: `Moved to Attic: ${entity?.type ?? "entity"} "${entity?.name ?? entityId}"`,
           created_at: now,
         });
 
-        await appendToSessionLog(projectId, userId, `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`);
+        await appendToSessionLog(projectId, userId, `Moved to Attic: ${entity?.type ?? "entity"} "${entity?.name ?? entityId}"`);
         return {
           success: true,
           result: { entity_id: entityId, deleted: true },
-          description: `Deleted ${entity?.type ?? "entity"}: ${entity?.name ?? entityId}`,
+          description: `Moved to Attic: ${entity?.type ?? "entity"} "${entity?.name ?? entityId}"`,
         };
       } catch (err) {
         return {

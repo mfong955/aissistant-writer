@@ -242,17 +242,23 @@ export async function dbGetEntities(projectId: string): Promise<Entity[]> {
     .select("*")
     .eq("project_id", projectId)
     .neq("type", "canvas")
+    .is("archived_at", null)
     .order("sort_order", { ascending: true });
   if (error) throw error;
   return (data ?? []) as Entity[];
 }
 
+/**
+ * An archived entity reads as "not found" for every normal operation — the same as if it
+ * didn't exist. Only `dbGetArchivedEntities` (the Attic's own listing) sees archived rows.
+ */
 export async function dbGetEntity(id: string, projectId: string): Promise<Entity | null> {
   const { data, error } = await getAdminClient()
     .from("entities")
     .select("*")
     .eq("id", id)
     .eq("project_id", projectId)
+    .is("archived_at", null)
     .single();
   if (error) return null;
   return data as Entity;
@@ -323,6 +329,7 @@ export async function dbUpdateEntity(
       .select("word_count, user_id")
       .eq("id", id)
       .eq("project_id", projectId)
+      .is("archived_at", null)
       .single() as unknown as { data: { word_count: number; user_id: string } | null; error: null };
 
     if (existing) {
@@ -340,6 +347,7 @@ export async function dbUpdateEntity(
     })
     .eq("id", id)
     .eq("project_id", projectId)
+    .is("archived_at", null)
     .select()
     .single();
   if (error) return null;
@@ -349,12 +357,83 @@ export async function dbUpdateEntity(
   return data as Entity;
 }
 
+/**
+ * Every id in the subtree rooted at `id` — the target plus every descendant, regardless of
+ * their current archived status. Used by archive/restore, which both need to walk the whole
+ * subtree in one batch rather than one row at a time. Purge doesn't need this: a real
+ * `.delete()` cascades through the existing `entities.parent_id` foreign key on its own.
+ */
+async function collectSubtreeIds(projectId: string, id: string): Promise<string[]> {
+  const { data } = await getAdminClient()
+    .from("entities")
+    .select("id, parent_id")
+    .eq("project_id", projectId) as unknown as { data: { id: string; parent_id: string | null }[] | null };
+
+  const childrenByParent = new Map<string, string[]>();
+  for (const row of data ?? []) {
+    if (!row.parent_id) continue;
+    const list = childrenByParent.get(row.parent_id) ?? [];
+    list.push(row.id);
+    childrenByParent.set(row.parent_id, list);
+  }
+
+  const ids: string[] = [];
+  const queue = [id];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    ids.push(current);
+    queue.push(...(childrenByParent.get(current) ?? []));
+  }
+  return ids;
+}
+
+/**
+ * Archives an entity and its whole subtree (docs/attic.md §2) — what every "delete" action in
+ * the app actually does now. Nothing is destroyed; `dbPurgeEntity` is the only real removal,
+ * reachable only from the Attic itself.
+ */
 export async function dbDeleteEntity(id: string, projectId: string): Promise<void> {
+  const ids = await collectSubtreeIds(projectId, id);
+  await getAdminClient()
+    .from("entities")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("project_id", projectId)
+    .in("id", ids);
+}
+
+/** Un-archives an entity and its whole (currently-archived) subtree. */
+export async function dbRestoreEntity(id: string, projectId: string): Promise<void> {
+  const ids = await collectSubtreeIds(projectId, id);
+  await getAdminClient()
+    .from("entities")
+    .update({ archived_at: null })
+    .eq("project_id", projectId)
+    .in("id", ids);
+}
+
+/**
+ * Permanent removal — only ever called from the Attic. No manual cascade needed: the existing
+ * `entities.parent_id` foreign key (`on delete cascade`, since 001_initial_schema.sql) removes
+ * descendants automatically, the same as hard-delete already worked before the Attic existed.
+ */
+export async function dbPurgeEntity(id: string, projectId: string): Promise<void> {
   await getAdminClient()
     .from("entities")
     .delete()
     .eq("id", id)
     .eq("project_id", projectId);
+}
+
+/** The Attic's own listing — the one place archived rows are meant to be visible. */
+export async function dbGetArchivedEntities(projectId: string): Promise<Entity[]> {
+  const { data, error } = await getAdminClient()
+    .from("entities")
+    .select("*")
+    .eq("project_id", projectId)
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Entity[];
 }
 
 const PROGRESS_DEFAULT = `## Status
@@ -578,6 +657,7 @@ export async function syncEntityReferences(
     .from("entities")
     .select("id, name, content, properties")
     .eq("project_id", projectId)
+    .is("archived_at", null)
     .not("content", "is", null);
 
   if (!rows?.length) return [];

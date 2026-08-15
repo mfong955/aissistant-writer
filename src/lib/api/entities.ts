@@ -40,8 +40,29 @@ export async function updateEntity(
   return res.json() as Promise<{ entity: Entity; renamedFrom?: string }>;
 }
 
+/** Moves an entity (and its subtree) to the Attic. See docs/attic.md. */
 export async function deleteEntity(id: string, projectId: string): Promise<void> {
   await fetch(`/api/entities/${id}?project_id=${projectId}`, { method: "DELETE" });
+}
+
+/** The Attic's own listing — archived entities only. */
+export async function getArchivedEntities(projectId: string): Promise<Entity[]> {
+  const res = await fetch(`/api/entities/archived?project_id=${projectId}`);
+  const data = (await res.json()) as { entities: Entity[] };
+  return data.entities;
+}
+
+export async function restoreEntity(id: string, projectId: string): Promise<void> {
+  await fetch(`/api/entities/${id}/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+}
+
+/** Permanent removal — only ever called from the Attic dialog. */
+export async function purgeEntity(id: string, projectId: string): Promise<void> {
+  await fetch(`/api/entities/${id}/purge?project_id=${projectId}`, { method: "DELETE" });
 }
 
 export async function saveEntityContent(

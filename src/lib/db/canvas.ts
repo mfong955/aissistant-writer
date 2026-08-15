@@ -4,12 +4,17 @@ import type { Entity, CanvasContent, CanvasVersion } from "@/types/database";
 
 const EMPTY_CANVAS: CanvasContent = { nodes: [], edges: [] };
 
+// Archived canvases (docs/attic.md) are just entities with type: "canvas" — the same
+// dbDeleteEntity/dbRestoreEntity path handles them, so every normal query here excludes
+// archived rows the same way entities.ts's dbGetEntities/dbGetEntity do.
+
 export async function dbGetCanvases(projectId: string): Promise<Entity[]> {
   const { data, error } = await getAdminClient()
     .from("entities")
     .select("*")
     .eq("project_id", projectId)
     .eq("type", "canvas")
+    .is("archived_at", null)
     .order("updated_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as Entity[];
@@ -22,6 +27,7 @@ export async function dbGetCanvas(id: string, projectId: string): Promise<Entity
     .eq("id", id)
     .eq("project_id", projectId)
     .eq("type", "canvas")
+    .is("archived_at", null)
     .single();
   if (error) return null;
   return data as Entity;
@@ -77,6 +83,7 @@ export async function dbUpdateCanvasContent(
     .eq("id", id)
     .eq("project_id", projectId)
     .eq("type", "canvas")
+    .is("archived_at", null)
     .single();
   if (readError || !current) throw readError ?? new Error("Canvas not found");
 

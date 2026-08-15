@@ -47,6 +47,8 @@ export interface Entity {
   version_hash: string | null;
   /** Kept in lockstep with `content` — see docs/writing-goals.md §1. */
   word_count: number;
+  /** Null = active. Set = archived (soft-deleted), recoverable from the Attic. See docs/attic.md. */
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }

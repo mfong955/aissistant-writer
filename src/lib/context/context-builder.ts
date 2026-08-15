@@ -43,6 +43,7 @@ export async function buildContext(params: {
     .eq("project_id", projectId)
     .eq("name", "AI Instructions")
     .is("parent_id", null)
+    .is("archived_at", null)
     .single() as unknown as { data: { content: Record<string, unknown> | null } | null; error: null };
 
   const resolvedInstructions = instructionsRow?.content
@@ -55,14 +56,17 @@ export async function buildContext(params: {
     .eq("project_id", projectId)
     .eq("name", "Project Progress")
     .is("parent_id", null)
+    .is("archived_at", null)
     .single() as unknown as { data: { id: string; content: Record<string, unknown> | null } | null; error: null };
 
   const progressContent = progressRow?.content
     ? extractTextFromTiptap(progressRow.content as Record<string, unknown>)
     : null;
 
+  // Archived entities (docs/attic.md) must never reach the AI's context — that's the whole
+  // point of archiving something.
   const [{ data: entityRows }, { data: summaryRows }, { data: projectStateRow }] = await Promise.all([
-    supabase.from("entities").select("*").eq("project_id", projectId),
+    supabase.from("entities").select("*").eq("project_id", projectId).is("archived_at", null),
     supabase.from("entity_summaries").select("*").eq("project_id", projectId),
     supabase.from("project_states").select("state_content").eq("project_id", projectId).single(),
   ]);

@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { dbGetEntity, dbUpdateEntity, dbDeleteEntity, appendToSessionLog } from "@/lib/db/entities";
 import { dbCreateChangeLog } from "@/lib/db/change-logs";
 import { getUserId } from "@/lib/get-user-id";
@@ -86,15 +84,9 @@ export async function DELETE(
   if (entity && isExplorerRootEntity(entity)) {
     return NextResponse.json({ error: "Canon, Manuscript, and Unsorted are fixed containers and cannot be deleted." }, { status: 400 });
   }
-  if (entity?.type === "image" && entity.content?.type === "image_file") {
-    const url = entity.content.url as string;
-    const filename = url.split("/").pop();
-    if (filename) {
-      const filePath = path.join(process.cwd(), ".data", "uploads", projectId, filename);
-      await fs.unlink(filePath).catch(() => {});
-    }
-  }
 
+  // Archive only (docs/attic.md) — no file cleanup here. An archived image entity is
+  // recoverable, so its file on disk must survive until purge, not this soft delete.
   await dbDeleteEntity(id, projectId);
   return NextResponse.json({ ok: true });
 }
