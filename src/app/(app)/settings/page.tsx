@@ -2,12 +2,13 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Key, Check, X } from "lucide-react";
+import { ChevronLeft, Key, Check, X, Link2 } from "lucide-react";
 import { BillingCard } from "@/components/billing/billing-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { startOpenRouterConnect } from "@/lib/openrouter-oauth";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -123,7 +124,27 @@ export default function SettingsPage() {
                 Remove
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => startOpenRouterConnect()}
+            >
+              <Link2 className="h-4 w-4" />
+              Connect with OpenRouter
+            </Button>
+          )}
+
+          {!hasKey && (
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-background px-2 text-muted-foreground">or paste a key manually</span>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="api-key">
